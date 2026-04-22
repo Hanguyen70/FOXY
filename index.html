@@ -203,7 +203,8 @@ textarea{resize:vertical;min-height:56px;}
       </div>
       <div class="tb-r">
         <button class="btn bg sm" onclick="syncDrive()">☁ GAS</button>
-        <button class="btn bg sm" onclick="syncToGitHub()" title="Sync lên GitHub → iPhone">📤 GitHub</button>
+        <button class="btn bg sm" onclick="syncToGitHub()" title="Sync lên GitHub → iPhone">⬆ Lưu cloud</button>
+        <button class="btn bg sm" onclick="loadFromGitHub()" title="Tải dữ liệu mới nhất từ GitHub">⬇ Tải cloud</button>
         <span id="syncInd" style="font-size:.8rem;min-width:16px;display:inline-block;text-align:center;cursor:default"></span>
         <button class="btn bg sm" onclick="lockApp()" title="Khóa màn hình">🔒</button>
         <button class="btn bg sm" onclick="exportJSON()">⬇ Export</button>
@@ -249,6 +250,42 @@ const GH_FILE='index.html';
 const GH_BRANCH='main';
 
 function getGHToken(){return localStorage.getItem(GH_TOKEN_KEY)||'';}
+
+
+async function loadFromGitHub(){
+  const ind=document.getElementById('syncInd');
+  if(ind)ind.textContent='⏳';
+  try{
+    // Lấy file HTML từ GitHub Pages (public, không cần token)
+    const url='https://hanguyen70.github.io/FOXY/index.html?t='+Date.now();
+    const resp=await fetch(url);
+    if(!resp.ok)throw new Error('Không tải được file: '+resp.status);
+    const html=await resp.text();
+
+    // Trích xuất dữ liệu từ block FELIX_DATA_INJECT
+    const match=html.match(/\/\* FELIX_DATA_INJECT \*\/\s*\nconst _FELIX_PRELOAD=([\s\S]*?);\n/);
+    if(!match)throw new Error('Không tìm thấy dữ liệu trong file GitHub');
+
+    const data=JSON.parse(match[1]);
+    if(!data||typeof data!=='object')throw new Error('Dữ liệu không hợp lệ');
+
+    // Xác nhận trước khi ghi đè
+    const keys=Object.keys(data).filter(k=>Array.isArray(data[k])&&data[k].length>0);
+    const msg='Tải dữ liệu từ GitHub?\n\nSẽ ghi đè dữ liệu hiện tại.\nTìm thấy: '+keys.join(', ');
+    if(!confirm(msg))return;
+
+    localStorage.setItem(DB,JSON.stringify(data));
+    db=data;
+    if(ind)ind.textContent='✓';
+    toast('✅ Đã tải dữ liệu từ GitHub');
+    setTimeout(()=>{if(ind)ind.textContent='';},3000);
+    go('dashboard');
+  }catch(err){
+    if(ind)ind.textContent='⚠';
+    toast('Lỗi tải GitHub: '+err.message,'er');
+    console.error(err);
+  }
+}
 
 async function syncToGitHub(){
   const token=getGHToken();
@@ -4846,6 +4883,7 @@ P.settings=function(){
         <div class="flex g8 mt8">
           <button class="btn bg sm" onclick="saveGHToken()">💾 Lưu token</button>
           <button class="btn bp sm" onclick="syncToGitHub()">📤 Sync lên GitHub ngay</button>
+          <button class="btn bg sm" onclick="loadFromGitHub()">📥 Tải từ GitHub</button>
           <button class="btn brd sm" onclick="clearGHToken()">🗑 Xóa token</button>
         </div>
         <div class="fh mt8" style="color:var(--ac)">
