@@ -255,7 +255,7 @@ const GH_REPO='Hanguyen70/FOXY';
 const GH_FILE='index.html';
 const GH_BRANCH='main';
 
-function getGHToken(){return localStorage.getItem(GH_TOKEN_KEY)||'';}
+function getGHToken(){const t=localStorage.getItem(GH_TOKEN_KEY)||'';return t.replace(/[^\x20-\x7E]/g,'').trim();}
 
 
 async function loadFromGitHub(){
