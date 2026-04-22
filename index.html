@@ -241,6 +241,12 @@ let db=(()=>{
   }catch(e){console.warn('DB load error:',e);}
   return BLANK();
 })();
+// Đồng bộ PIN từ db
+if(db&&db.pin){
+  if(localStorage.getItem('wtp3_pin')!==db.pin){
+    localStorage.setItem('wtp3_pin',db.pin);
+  }
+}
 let _syncTimer=null,_syncStatus='idle';
 
 // ── GITHUB SYNC ──────────────────────────────────────────────────────────────
@@ -276,8 +282,15 @@ async function loadFromGitHub(){
 
     localStorage.setItem(DB,JSON.stringify(data));
     db=data;
+    // Đồng bộ PIN từ cloud
+    if(data.pin){
+      localStorage.setItem('wtp3_pin',data.pin);
+      sessionStorage.removeItem('wtp3_unlocked'); // yêu cầu nhập PIN lại
+    } else {
+      localStorage.removeItem('wtp3_pin');
+    }
     if(ind)ind.textContent='✓';
-    toast('✅ Đã tải dữ liệu từ GitHub');
+    toast('✅ Đã tải dữ liệu từ GitHub'+(data.pin?' — PIN đã đồng bộ':''));
     setTimeout(()=>{if(ind)ind.textContent='';},3000);
     go('dashboard');
   }catch(err){
@@ -4929,9 +4942,10 @@ P.settings=function(){
         <div class="ct" style="margin-top:12px">🔐 Bảo mật PIN</div>
         <div class="fg"><label>Mã PIN (4–8 số, để trống = tắt PIN)</label>
           <input type="password" id="pinSet" maxlength="8" placeholder="${getPin()?'Đã cài PIN — nhập mới để đổi':'Chưa cài PIN'}">
+          <div class="fh">PIN sẽ đồng bộ cùng dữ liệu khi ⬆ Lưu cloud</div>
         </div>
         <div class="flex g8 mt8">
-          <button class="btn bp sm" onclick="savePin()">💾 Lưu PIN</button>
+          <button class="btn bp sm" onclick="savePin()">💾 Lưu PIN & Sync</button>
           ${getPin()?`<button class="btn brd sm" onclick="removePin()">🔓 Tắt PIN</button>`:''}
         </div>
         <div class="ct" style="margin-top:12px">⚠ Vùng nguy hiểm</div>
@@ -4943,8 +4957,17 @@ P.settings=function(){
 function savePin(){
   const v=document.getElementById('pinSet')?.value.trim();
   if(v&&(v.length<4||!/^\d+$/.test(v))){toast('PIN phải là 4–8 chữ số','er');return;}
-  if(v){localStorage.setItem(SEC_KEY,v);toast('✅ Đã cài PIN mới');}
-  else{localStorage.removeItem(SEC_KEY);toast('PIN đã tắt','inf');}
+  if(v){
+    localStorage.setItem(SEC_KEY,v);
+    db.pin=v; // lưu vào db để sync
+    save();
+    toast('✅ Đã cài PIN — sẽ đồng bộ khi ⬆ Lưu cloud');
+  } else {
+    localStorage.removeItem(SEC_KEY);
+    delete db.pin;
+    save();
+    toast('PIN đã tắt','inf');
+  }
   P.settings();
 }
 function removePin(){
