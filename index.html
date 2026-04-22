@@ -262,40 +262,27 @@ async function loadFromGitHub(){
   const ind=document.getElementById('syncInd');
   if(ind)ind.textContent='⏳';
   try{
-    // Lấy file HTML từ GitHub Pages (public, không cần token)
-    const url='https://hanguyen70.github.io/FOXY/index.html?t='+Date.now();
+    const url='https://raw.githubusercontent.com/Hanguyen70/FOXY/main/felix-data.json?t='+Date.now();
     const resp=await fetch(url);
-    if(!resp.ok)throw new Error('Không tải được file: '+resp.status);
-    const html=await resp.text();
-
-    // Trích xuất dữ liệu từ block FELIX_DATA_INJECT
-    const match=html.match(/\/\* FELIX_DATA_INJECT \*\/\s*\nconst _FELIX_PRELOAD=([\s\S]*?);\n/);
-    if(!match)throw new Error('Không tìm thấy dữ liệu trong file GitHub');
-
-    const data=JSON.parse(match[1]);
+    if(!resp.ok)throw new Error('Chưa có dữ liệu cloud. Hãy ⬆ Lưu cloud từ máy tính trước.');
+    const data=await resp.json();
     if(!data||typeof data!=='object')throw new Error('Dữ liệu không hợp lệ');
-
-    // Xác nhận trước khi ghi đè
-    const keys=Object.keys(data).filter(k=>Array.isArray(data[k])&&data[k].length>0);
-    const msg='Tải dữ liệu từ GitHub?\n\nSẽ ghi đè dữ liệu hiện tại.\nTìm thấy: '+keys.join(', ');
+    const saved=data._saved?new Date(data._saved).toLocaleString('vi-VN'):'';
+    const keys=['realestate','vessels','cash','gold','equity'].filter(k=>Array.isArray(data[k])&&data[k].length>0);
+    const msg='Tải dữ liệu từ cloud?'+(saved?'\nLưu lúc: '+saved:'')+'\nSẽ ghi đè dữ liệu hiện tại.'+(keys.length?'\nCó: '+keys.join(', '):'');
     if(!confirm(msg))return;
-
+    const pin=data.pin;delete data.pin;delete data._saved;
     localStorage.setItem(DB,JSON.stringify(data));
     db=data;
-    // Đồng bộ PIN từ cloud
-    if(data.pin){
-      localStorage.setItem('wtp3_pin',data.pin);
-      sessionStorage.removeItem('wtp3_unlocked'); // yêu cầu nhập PIN lại
-    } else {
-      localStorage.removeItem('wtp3_pin');
-    }
+    if(pin){localStorage.setItem('wtp3_pin',pin);sessionStorage.removeItem('wtp3_unlocked');}
+    else localStorage.removeItem('wtp3_pin');
     if(ind)ind.textContent='✓';
-    toast('✅ Đã tải dữ liệu từ GitHub'+(data.pin?' — PIN đã đồng bộ':''));
-    setTimeout(()=>{if(ind)ind.textContent='';},3000);
+    toast('✅ Đã tải dữ liệu từ cloud'+(pin?' — PIN đồng bộ':'')+(saved?' ('+saved+')':''));
+    setTimeout(()=>{if(ind)ind.textContent='';},4000);
     go('dashboard');
   }catch(err){
     if(ind)ind.textContent='⚠';
-    toast('Lỗi tải GitHub: '+err.message,'er');
+    toast('Lỗi tải cloud: '+err.message,'er');
     console.error(err);
   }
 }
@@ -306,37 +293,25 @@ async function syncToGitHub(){
   const ind=document.getElementById('syncInd');
   if(ind)ind.textContent='⏳';
   try{
-    // 1. Lấy SHA của file hiện tại
-    const meta=await fetch('https://api.github.com/repos/'+GH_REPO+'/contents/'+GH_FILE+'?ref='+GH_BRANCH,{
+    const dataFile='felix-data.json';
+    const payload={...db,pin:localStorage.getItem('wtp3_pin')||undefined,_saved:new Date().toISOString()};
+    const dataStr=JSON.stringify(payload);
+    const content=btoa(unescape(encodeURIComponent(dataStr)));
+    let sha=undefined;
+    const check=await fetch('https://api.github.com/repos/'+GH_REPO+'/contents/'+dataFile+'?ref='+GH_BRANCH,{
       headers:{'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json'}
     });
-    if(!meta.ok)throw new Error('Không lấy được file info: '+meta.status);
-    const {sha}=await meta.json();
-
-    // 2. Lấy nội dung file hiện tại, nhúng data mới
-    const htmlResp=await fetch(window.location.href+'?t='+Date.now());
-    let html=await htmlResp.text();
-
-    // Nhúng db data vào HTML
-    const dbStr=JSON.stringify(db);
-    const marker='/* FELIX_DATA_INJECT */';
-    const inject=`\nconst _FELIX_PRELOAD=${dbStr};\nif(_FELIX_PRELOAD&&!localStorage.getItem('${DB}')){localStorage.setItem('${DB}',JSON.stringify(_FELIX_PRELOAD));}\n`;
-    if(html.includes(marker)){
-      html=html.replace(new RegExp('/\\* FELIX_DATA_INJECT \\*\\/[\\s\\S]*?/\\* END_FELIX_DATA \\*/'),marker+inject+'/* END_FELIX_DATA */');
-    } else {
-      const parts=html.split('<'+'/script>');parts[parts.length-2]+='/* FELIX_DATA_INJECT */'+inject+'/* END_FELIX_DATA */\n';html=parts.join('<'+'/'+'script>');
-    }
-
-    // 3. Push lên GitHub
-    const content=btoa(unescape(encodeURIComponent(html)));
-    const push=await fetch('https://api.github.com/repos/'+GH_REPO+'/contents/'+GH_FILE,{
+    if(check.ok){const j=await check.json();sha=j.sha;}
+    const body={message:'FELIX sync '+new Date().toLocaleString('vi-VN'),content,branch:GH_BRANCH};
+    if(sha)body.sha=sha;
+    const push=await fetch('https://api.github.com/repos/'+GH_REPO+'/contents/'+dataFile,{
       method:'PUT',
       headers:{'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','Content-Type':'application/json'},
-      body:JSON.stringify({message:'FELIX sync '+new Date().toLocaleString('vi-VN'),content,sha,branch:GH_BRANCH})
+      body:JSON.stringify(body)
     });
     if(!push.ok){const e=await push.json();throw new Error(e.message||push.status);}
     if(ind)ind.textContent='✓';
-    toast('✅ Đã sync lên GitHub — iPhone sẽ cập nhật trong vài phút');
+    toast('✅ Đã lưu lên cloud — iPhone bấm ⬇ Tải cloud để cập nhật');
     setTimeout(()=>{if(ind)ind.textContent='';},4000);
   }catch(err){
     if(ind)ind.textContent='⚠';
