@@ -202,7 +202,8 @@ textarea{resize:vertical;min-height:56px;}
         <span class="tb-title" id="PT">Dashboard</span>
       </div>
       <div class="tb-r">
-        <button class="btn bg sm" onclick="syncDrive()">☁ Sync</button>
+        <button class="btn bg sm" onclick="syncDrive()">☁ GAS</button>
+        <button class="btn bg sm" onclick="syncToGitHub()" title="Sync lên GitHub → iPhone">📤 GitHub</button>
         <span id="syncInd" style="font-size:.8rem;min-width:16px;display:inline-block;text-align:center;cursor:default"></span>
         <button class="btn bg sm" onclick="lockApp()" title="Khóa màn hình">🔒</button>
         <button class="btn bg sm" onclick="exportJSON()">⬇ Export</button>
@@ -240,6 +241,60 @@ let db=(()=>{
   return BLANK();
 })();
 let _syncTimer=null,_syncStatus='idle';
+
+// ── GITHUB SYNC ──────────────────────────────────────────────────────────────
+const GH_TOKEN_KEY='felix_gh_token';
+const GH_REPO='Hanguyen70/FOXY';
+const GH_FILE='index.html';
+const GH_BRANCH='main';
+
+function getGHToken(){return localStorage.getItem(GH_TOKEN_KEY)||'';}
+
+async function syncToGitHub(){
+  const token=getGHToken();
+  if(!token){toast('Chưa có GitHub token — vào Settings để nhập','er');return;}
+  const ind=document.getElementById('syncInd');
+  if(ind)ind.textContent='⏳';
+  try{
+    // 1. Lấy SHA của file hiện tại
+    const meta=await fetch('https://api.github.com/repos/'+GH_REPO+'/contents/'+GH_FILE+'?ref='+GH_BRANCH,{
+      headers:{'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json'}
+    });
+    if(!meta.ok)throw new Error('Không lấy được file info: '+meta.status);
+    const {sha}=await meta.json();
+
+    // 2. Lấy nội dung file hiện tại, nhúng data mới
+    const htmlResp=await fetch(window.location.href+'?t='+Date.now());
+    let html=await htmlResp.text();
+
+    // Nhúng db data vào HTML
+    const dbStr=JSON.stringify(db);
+    const marker='/* FELIX_DATA_INJECT */';
+    const inject=`\nconst _FELIX_PRELOAD=${dbStr};\nif(_FELIX_PRELOAD&&!localStorage.getItem('${DB}')){localStorage.setItem('${DB}',JSON.stringify(_FELIX_PRELOAD));}\n`;
+    if(html.includes(marker)){
+      html=html.replace(new RegExp('/\\* FELIX_DATA_INJECT \\*\\/[\\s\\S]*?/\\* END_FELIX_DATA \\*/'),marker+inject+'/* END_FELIX_DATA */');
+    } else {
+      const parts=html.split('<'+'/script>');parts[parts.length-2]+='/* FELIX_DATA_INJECT */'+inject+'/* END_FELIX_DATA */\n';html=parts.join('<'+'/'+'script>');
+    }
+
+    // 3. Push lên GitHub
+    const content=btoa(unescape(encodeURIComponent(html)));
+    const push=await fetch('https://api.github.com/repos/'+GH_REPO+'/contents/'+GH_FILE,{
+      method:'PUT',
+      headers:{'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','Content-Type':'application/json'},
+      body:JSON.stringify({message:'FELIX sync '+new Date().toLocaleString('vi-VN'),content,sha,branch:GH_BRANCH})
+    });
+    if(!push.ok){const e=await push.json();throw new Error(e.message||push.status);}
+    if(ind)ind.textContent='✓';
+    toast('✅ Đã sync lên GitHub — iPhone sẽ cập nhật trong vài phút');
+    setTimeout(()=>{if(ind)ind.textContent='';},4000);
+  }catch(err){
+    if(ind)ind.textContent='⚠';
+    toast('Lỗi sync GitHub: '+err.message,'er');
+    console.error(err);
+  }
+}
+
 function autoSync(){
   if(!getGASUrl())return;
   clearTimeout(_syncTimer);
@@ -271,6 +326,9 @@ function updateSyncInd(){
     :last?'Sync cuối: '+new Date(last).toLocaleString('vi-VN'):'';
 }
 const save=()=>{localStorage.setItem(DB,JSON.stringify(db));autoSync();};
+// Pre-load GitHub token
+// GitHub token — nhập trong Settings
+
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,5);
 const esc=s=>s==null?'':('' +s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 const fU=(v,d=0)=>v==null||isNaN(+v)?'—':'$'+Number(v).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d||2});
@@ -484,6 +542,18 @@ function quickAdd(){
   ).join('')}</div>`);
 }
 function getGASUrl(){return localStorage.getItem('wtp3_gas')||'';}
+function saveGHToken(){
+  const t=document.getElementById('gh-token-input')?.value?.trim();
+  if(!t){toast('Nhập token','er');return;}
+  localStorage.setItem(GH_TOKEN_KEY,t);
+  toast('✅ Đã lưu GitHub token');
+}
+function clearGHToken(){
+  localStorage.removeItem(GH_TOKEN_KEY);
+  const el=document.getElementById('gh-token-input');
+  if(el)el.value='';
+  toast('Đã xóa token','er');
+}
 function syncDrive(){
   const url=getGASUrl();if(!url){toast('Chưa cấu hình GAS URL','er');return;}
   clearTimeout(_syncTimer);_syncStatus='syncing';updateSyncInd();
@@ -4765,6 +4835,21 @@ P.settings=function(){
   document.getElementById('PC').innerHTML=`
     <div class="st mb16">Cài đặt & Hệ thống</div>
     <div class="g g2 mb16">
+      <div class="card mb12">
+        <div class="ct">📤 GitHub Sync — iPhone/iPad</div>
+        <div class="fg"><label>GitHub Token</label>
+          <input type="password" id="gh-token-input" value="${getGHToken()?'••••••••••••':''}" placeholder="github_pat_...">
+          <div class="fh">Token cho phép upload file lên GitHub tự động</div>
+        </div>
+        <div class="flex g8 mt8">
+          <button class="btn bg sm" onclick="saveGHToken()">💾 Lưu token</button>
+          <button class="btn bp sm" onclick="syncToGitHub()">📤 Sync lên GitHub ngay</button>
+          <button class="btn brd sm" onclick="clearGHToken()">🗑 Xóa token</button>
+        </div>
+        <div class="fh mt8" style="color:var(--ac)">
+          📱 Sau khi sync → iPhone mở FELIX → refresh là xem dữ liệu mới
+        </div>
+      </div>
       <div class="card">
         <div class="ct">☁ Google Drive Sync</div>
         <div class="fg"><label>Apps Script URL</label>
