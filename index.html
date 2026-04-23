@@ -557,19 +557,28 @@ function calcNW(){
   (db.vessels||[]).forEach(a=>{if(a.status!=='sold')t+=toUSDy(a.curVal||a.price,a.cur,a.year);});
   (db.cash||[]).forEach(a=>{t+=toUSD(a.balance||0,a.cur);});
   (db.gold||[]).forEach(g=>{t+=(g.qty||0)*(g.curPrice||g.buyPrice||0)/db.exRate;});
-  (db.equity||[]).forEach(a=>{t+=toUSD((a.curVal||a.initVal||0)*(a.pct||0)/100,a.cur);});
+  (db.equity||[]).forEach(a=>{t+=toUSD(calcEQVal(a),a.cur);});
   (db.companies||[]).forEach(c=>{t+=toUSDy((c.nav||0),c.cur,c.foundedYear);});
   (db.receivables||[]).forEach(a=>{if(a.status!=='closed')t+=toUSD(a.balance||a.amount,a.cur);});
   (db.payables||[]).forEach(a=>{if(a.status!=='closed')t-=toUSD(a.balance||a.amount,a.cur);});
   return t;
 }
+
+// Tính giá trị góp vốn nhất quán: curVal > totInv (initVal+caps-rút) > initVal
+function calcEQVal(a){
+  const capAdd=(a.caps||[]).filter(c=>c.type==='add').reduce((s,c)=>s+(c.amount||0),0);
+  const capOut=(a.caps||[]).filter(c=>c.type==='withdraw').reduce((s,c)=>s+(c.amount||0),0);
+  const totInv=(a.initVal||0)+capAdd-capOut;
+  return (a.curVal||totInv||0)*(a.pct||0)/100;
+}
+
 function calcCats(){
   const c={re:0,vs:0,cash:0,gold:0,eq:0,rec:0,pay:0};
   (db.realestate||[]).forEach(a=>{if(a.status!=='sold')c.re+=toUSDy(a.curVal||a.price,a.cur,a.year);});
   (db.vessels||[]).forEach(a=>{if(a.status!=='sold'){const m=getVesselModule(a.type);if(m==='vessels')c.vs+=toUSDy(a.curVal||a.price,a.cur,a.year);else if(m==='machinery')c.mac=(c.mac||0)+toUSDy(a.curVal||a.price,a.cur,a.year);else c.oth=(c.oth||0)+toUSDy(a.curVal||a.price,a.cur,a.year);}});
   (db.cash||[]).forEach(a=>{c.cash+=toUSD(a.balance||0,a.cur);});
   (db.gold||[]).forEach(g=>{c.gold+=(g.qty||0)*(g.curPrice||g.buyPrice||0)/db.exRate;});
-  (db.equity||[]).forEach(a=>{c.eq+=toUSD((a.curVal||a.initVal||0)*(a.pct||0)/100,a.cur);});
+  (db.equity||[]).forEach(a=>{c.eq+=toUSD(calcEQVal(a),a.cur);});
   (db.companies||[]).forEach(co=>{c.co=(c.co||0)+toUSDy((co.nav||0),co.cur,co.foundedYear);});
   (db.receivables||[]).forEach(a=>{if(a.status!=='closed')c.rec+=toUSD(a.balance||a.amount,a.cur);});
   (db.payables||[]).forEach(a=>{if(a.status!=='closed')c.pay+=toUSD(a.balance||a.amount,a.cur);});
@@ -698,7 +707,8 @@ P.dashboard=function(){
       {ic:'📦',lb:'Tài sản khác',v:cats.oth||0,col:'#a78bfa'},
       {ic:'💵',lb:'Tiền mặt/NH',v:cats.cash,col:'#4ade80'},
       {ic:'💰',lb:'Vàng/SJC',v:cats.gold,col:'#fbbf24'},
-      {ic:'🤝',lb:'Góp vốn',v:cats.eq+(cats.co||0),col:'#e879f9'},
+      {ic:'🤝',lb:'Góp vốn',v:cats.eq,col:'#e879f9'},
+      {ic:'🏢',lb:'Công ty',v:cats.co||0,col:'#c084fc'},
       {ic:'📥',lb:'Phải thu',v:cats.rec,col:'#fb923c'},
     ].filter(r=>r.v>0);
 
@@ -1002,7 +1012,7 @@ function detailAssets(){
        ['💵','Tiền mặt/NH',db.cash||[],a=>toUSD(a.balance||0,a.cur),'var(--gn)'],
        ['💰','Vàng',db.gold||[],g=>(g.qty||0)*(g.curPrice||g.buyPrice||0)/db.exRate,'var(--yw)'],
        ['🏢','Công ty',db.companies||[],c=>toUSDy(c.nav||0,c.cur,c.foundedYear),'var(--tl)'],
-       ['🤝','Góp vốn',db.equity||[],a=>toUSD((a.curVal||a.initVal||0)*(a.pct||0)/100,a.cur),'var(--pu)'],
+       ['🤝','Góp vốn',db.equity||[],a=>toUSD(calcEQVal(a),a.cur),'var(--pu)'],
     ].map(([ic,lb,items,vfn,col])=>{
       const active=items.filter(a=>a.status!=='closed'&&a.status!=='sold');
       if(!active.length)return '';
@@ -2679,7 +2689,7 @@ function delGL(id){
 // ── GÓP VỐN ─────────────────────────────────────────────────────
 P.equity=function(){
   const A=db.equity||[];
-  const totMy=A.reduce((s,a)=>s+toUSD((a.curVal||a.initVal||0)*(a.pct||0)/100,a.cur),0);
+  const totMy=A.reduce((s,a)=>s+toUSD(calcEQVal(a),a.cur),0);
   const totDist=A.reduce((s,a)=>s+(a.dists||[]).reduce((ss,d)=>ss+toUSD(d.amount||0,a.cur),0),0);
   document.getElementById('PC').innerHTML=`
     <div class="flex aic jb mb16">
@@ -2693,7 +2703,7 @@ P.equity=function(){
         const capAdd=(a.caps||[]).filter(c=>c.type==='add').reduce((s,c)=>s+(c.amount||0),0);
         const capOut=(a.caps||[]).filter(c=>c.type==='withdraw').reduce((s,c)=>s+(c.amount||0),0);
         const totInv=(a.initVal||0)+capAdd-capOut;
-        const myVal=toUSD((a.curVal||totInv)*(a.pct||0)/100,a.cur);
+        const myVal=toUSD(calcEQVal(a),a.cur);
         const dist=(a.dists||[]).reduce((s,d)=>s+toUSD(d.amount||0,a.cur),0);
         return `<tr><td><div style="font-weight:600;font-size:.79rem">${a.name}</div>
             <div style="font-size:.65rem;color:var(--t3)">${a.type||''} · ${fD(a.date)}</div></td>
@@ -2726,7 +2736,7 @@ function viewEQ(id){
   const capAdd=(a.caps||[]).filter(c=>c.type==='add').reduce((s,c)=>s+(c.amount||0),0);
   const capOut=(a.caps||[]).filter(c=>c.type==='withdraw').reduce((s,c)=>s+(c.amount||0),0);
   const totInv=(a.initVal||0)+capAdd-capOut;
-  const myVal=toUSD((a.curVal||totInv)*(a.pct||0)/100,a.cur);
+  const myVal=toUSD(calcEQVal(a),a.cur);
   const tdist=(a.dists||[]).reduce((s,d)=>s+(d.amount||0),0);
   const distRows=(a.dists||[]).map((d,i)=>`<tr>
     <td class="mn">${fD(d.date)}</td><td class="mn ct2">${d.year||'—'}</td>
