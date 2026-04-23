@@ -214,6 +214,7 @@ textarea{resize:vertical;min-height:56px;}
         <button class="btn bg sm" onclick="loadFromGitHub()" title="Tải dữ liệu mới nhất từ GitHub">⬇ Tải cloud</button>
         <span id="syncInd" style="font-size:.8rem;min-width:16px;display:inline-block;text-align:center;cursor:default"></span>
         <button class="btn bg sm" onclick="lockApp()" title="Khóa màn hình">🔒</button>
+        <button class="btn brd sm desktop-only" onclick="endSession()" title="Sync cloud + xóa dữ liệu khỏi máy này" style="color:#f87171;border-color:#f87171">⏏ Thoát</button>
         <button class="btn bg sm desktop-only" onclick="exportJSON()">⬇ Export</button>
         <label class="btn bg sm desktop-only" style="cursor:pointer">⬆ Import
           <input type="file" accept=".json" style="display:none" onchange="importJSON(event)">
@@ -258,6 +259,8 @@ if(db&&db.pin){
   }
 }
 let _syncTimer=null,_syncStatus='idle';
+let _cloudSyncTimer=null;
+let _cloudSyncEnabled=localStorage.getItem('felix_auto_cloud')!=='off';
 const isMobile=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 if(isMobile){
   // Thêm CSS ẩn nút chỉnh sửa trên mobile
@@ -347,6 +350,47 @@ async function syncToGitHub(){
   }
 }
 
+function autoCloudSync(){
+  // Chỉ sync cloud nếu có token và được bật
+  if(!getGHToken())return;
+  if(!_cloudSyncEnabled)return;
+  clearTimeout(_cloudSyncTimer);
+  const ind=document.getElementById('syncInd');
+  if(ind)ind.textContent='·';
+  _cloudSyncTimer=setTimeout(async()=>{
+    if(ind)ind.textContent='⏳';
+    try{
+      const dataFile='felix-data.json';
+      const payload={...db,pin:localStorage.getItem('wtp3_pin')||undefined,_saved:new Date().toISOString()};
+      const dataStr=JSON.stringify(payload);
+      const content=btoa(unescape(encodeURIComponent(dataStr)));
+      let sha=undefined;
+      const check=await fetch('https://api.github.com/repos/'+GH_REPO+'/contents/'+dataFile+'?ref='+GH_BRANCH,{
+        headers:{'Authorization':'Bearer '+getGHToken(),'Accept':'application/vnd.github+json'}
+      });
+      if(check.ok){const j=await check.json();sha=j.sha;}
+      const body={message:'FELIX auto-sync '+new Date().toLocaleString('vi-VN'),content,branch:GH_BRANCH};
+      if(sha)body.sha=sha;
+      const push=await fetch('https://api.github.com/repos/'+GH_REPO+'/contents/'+dataFile,{
+        method:'PUT',
+        headers:{'Authorization':'Bearer '+getGHToken(),'Accept':'application/vnd.github+json','Content-Type':'application/json'},
+        body:JSON.stringify(body)
+      });
+      if(push.ok){
+        localStorage.setItem('wtp3_last_cloud_sync',new Date().toISOString());
+        if(ind)ind.textContent='☁✓';
+        setTimeout(()=>{if(ind)ind.textContent='';},3000);
+      } else {
+        if(ind)ind.textContent='☁⚠';
+        setTimeout(()=>{if(ind)ind.textContent='';},4000);
+      }
+    }catch(e){
+      if(ind)ind.textContent='';
+      console.warn('Auto cloud sync failed:',e.message);
+    }
+  },30000); // 30 giây debounce
+}
+
 function autoSync(){
   if(!getGASUrl())return;
   clearTimeout(_syncTimer);
@@ -377,7 +421,7 @@ function updateSyncInd(){
     :_syncStatus==='pending'?'Chuẩn bị sync...'
     :last?'Sync cuối: '+new Date(last).toLocaleString('vi-VN'):'';
 }
-const save=()=>{localStorage.setItem(DB,JSON.stringify(db));autoSync();};
+const save=()=>{localStorage.setItem(DB,JSON.stringify(db));autoSync();autoCloudSync();};
 // Pre-load GitHub token
 // GitHub token — nhập trong Settings
 
@@ -4994,6 +5038,13 @@ P.settings=function(){
         <div class="fh mt8" style="color:var(--ac)">
           📱 Sau khi sync → iPhone mở FELIX → refresh là xem dữ liệu mới
         </div>
+        <div class="flex aic g8 mt10">
+          <label style="font-size:.76rem;display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="autoCloudChk" ${localStorage.getItem('felix_auto_cloud')!=='off'?'checked':''} onchange="toggleAutoCloud(this.checked)">
+            Tự động sync cloud sau mỗi thay đổi (30 giây)
+          </label>
+        </div>
+        <div class="fh">${localStorage.getItem('wtp3_last_cloud_sync')?'☁ Sync cloud lần cuối: '+new Date(localStorage.getItem('wtp3_last_cloud_sync')).toLocaleString('vi-VN'):'Chưa sync cloud lần nào'}</div>
       </div>
       <div class="card">
         <div class="ct">☁ Google Drive Sync</div>
@@ -5054,6 +5105,10 @@ P.settings=function(){
           ${getPin()?`<button class="btn brd sm" onclick="removePin()">🔓 Tắt PIN</button>`:''}
         </div>
         <div class="ct" style="margin-top:12px">⚠ Vùng nguy hiểm</div>
+        <div class="flex g8 fw mb8">
+          <button class="btn brd" onclick="endSession()" style="color:#f87171;border-color:#f87171">⏏ Kết thúc phiên — Sync & xóa dữ liệu máy này</button>
+        </div>
+        <div class="fh mb12" style="color:var(--t3)">Dùng khi làm việc trên máy lạ — sync cloud xong sẽ xóa sạch dữ liệu khỏi trình duyệt này</div>
         <button class="btn brd" onclick="clearAll()">🗑 Xóa toàn bộ dữ liệu</button>
       </div>
     </div>`;
@@ -5108,6 +5163,59 @@ function initAutoLock(){
     document.addEventListener(ev,resetAutoLock,{passive:true});
   });
   resetAutoLock();
+}
+
+
+// ── KẾT THÚC PHIÊN (máy lạ) ──────────────────────────────────────────────────
+async function endSession(){
+  if(!confirm('Kết thúc phiên?\n\n✅ Dữ liệu sẽ được sync lên cloud\n🗑 Sau đó xóa khỏi máy này'))return;
+  const ind=document.getElementById('syncInd');
+  if(ind)ind.textContent='⏳';
+  try{
+    // Sync lần cuối trước khi xóa
+    if(getGHToken()){
+      const dataFile='felix-data.json';
+      const payload={...db,pin:localStorage.getItem('wtp3_pin')||undefined,_saved:new Date().toISOString()};
+      const content=btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+      let sha=undefined;
+      const check=await fetch('https://api.github.com/repos/'+GH_REPO+'/contents/'+dataFile+'?ref='+GH_BRANCH,{
+        headers:{'Authorization':'Bearer '+getGHToken(),'Accept':'application/vnd.github+json'}
+      });
+      if(check.ok){const j=await check.json();sha=j.sha;}
+      const body={message:'FELIX end-session '+new Date().toLocaleString('vi-VN'),content,branch:GH_BRANCH};
+      if(sha)body.sha=sha;
+      await fetch('https://api.github.com/repos/'+GH_REPO+'/contents/'+dataFile,{
+        method:'PUT',
+        headers:{'Authorization':'Bearer '+getGHToken(),'Accept':'application/vnd.github+json','Content-Type':'application/json'},
+        body:JSON.stringify(body)
+      });
+    }
+    // Xóa toàn bộ dữ liệu local (trừ token)
+    const token=localStorage.getItem('felix_gh_token');
+    localStorage.clear();
+    sessionStorage.clear();
+    // Giữ lại token để lần sau dùng được
+    // if(token)localStorage.setItem('felix_gh_token',token);
+    toast('✅ Đã sync & xóa dữ liệu — an toàn rời máy!');
+    setTimeout(()=>{
+      document.getElementById('PC').innerHTML=
+        '<div style="position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;text-align:center;padding:20px">'
+        +'<div style="font-size:3rem">🔒</div>'
+        +'<div style="font-family:DM Serif Display,serif;font-size:1.4rem;color:var(--ac)">Phiên đã kết thúc</div>'
+        +'<div style="font-size:.8rem;color:var(--t3)">Dữ liệu đã được xóa khỏi máy này<br>Dữ liệu đã được lưu lên cloud an toàn</div>'
+        +'<button onclick="location.reload()" style="background:var(--ac);color:#07090e;border:none;padding:10px 24px;border-radius:8px;font-size:.85rem;cursor:pointer;font-weight:700">Bắt đầu phiên mới</button>'
+        +'</div>';
+    },1500);
+  }catch(e){
+    toast('Lỗi kết thúc phiên: '+e.message,'er');
+    console.error(e);
+  }
+}
+
+function toggleAutoCloud(on){
+  localStorage.setItem('felix_auto_cloud',on?'on':'off');
+  _cloudSyncEnabled=on;
+  toast(on?'✅ Bật tự động sync cloud':'Đã tắt tự động sync cloud');
 }
 
 function saveAutoLock(){
