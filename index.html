@@ -894,17 +894,17 @@ function detailProfit(){
   // Nhóm hiển thị — kèm chi tiết từng tài sản
   const calcSellPnlAsset=a=>{const c=a.price+(a.buyCost||0)+(a.investments||[]).reduce((ss,i)=>ss+(i.amount||0),0)+(a.sellCost||0);return toUSDy((a.sellPrice||0)-c,a.cur,a.year);};
   const groups=[
-    {label:'🏠 Nhà đất',color:'var(--bl)',rows:[
+    {label:'🏠 Nhà đất',color:'var(--bl)',total:pRE,rows:[
       ['Bán nhà đất',pRE],
       ...(db.realestate||[]).filter(a=>a.status==='sold'&&calcSellPnlAsset(a)!==0).map(a=>['  └ '+a.name+' ('+a.year+')',calcSellPnlAsset(a)]),
     ]},
-    {label:'⚓ Tàu thuyền',color:'var(--tl)',rows:[
+    {label:'⚓ Tàu thuyền',color:'var(--tl)',total:pBoat+pRentBoat,rows:[
       ['Bán tàu thuyền',pBoat],
       ...(db.vessels||[]).filter(a=>a.status==='sold'&&getVesselModule(a.type)==='vessels').map(a=>['  └ '+a.name+' ('+a.year+')',calcSellPnlAsset(a)]),
       ['Cho thuê tàu',pRentBoat],
       ...(db.vessels||[]).filter(a=>getVesselModule(a.type)==='vessels'&&(a.rentals||[]).length>0).map(a=>{const r=(a.rentals||[]).reduce((s,r)=>s+toUSD(r.amount||0,r.cur||a.cur),0);return r?['  └ '+a.name,r]:null;}).filter(Boolean),
     ]},
-    {label:'🔧 Máy móc / Thiết bị',color:'var(--or)',rows:[
+    {label:'🔧 Máy móc / Thiết bị',color:'var(--or)',total:pMach+pRentMach,rows:[
       ['Bán máy móc/TB',pMach],
       ...(db.vessels||[]).filter(a=>a.status==='sold'&&getVesselModule(a.type)==='machinery').map(a=>['  └ '+a.name+' ('+a.year+')',calcSellPnlAsset(a)]),
       ['Cho thuê máy móc',pRentMach],
@@ -915,7 +915,7 @@ function detailProfit(){
       ...(db.vessels||[]).filter(a=>a.status==='sold'&&getVesselModule(a.type)==='other').map(a=>['  └ '+a.name+' ('+a.year+')',calcSellPnlAsset(a)]),
       ['Cho thuê khác',pRentOth],
     ]},
-    {label:'💵 Tiền mặt / NH',color:'var(--gn)',rows:[
+    {label:'💵 Tiền mặt / NH',color:'var(--gn)',total:pInt,rows:[
       ['Lãi tiền gửi',pInt],
       ...(db.cash||[]).map(a=>{const i=(a.txs||[]).filter(t=>t.type==='int').reduce((s,t)=>s+toUSD(t.amt||0,a.cur),0);return i?['  └ '+a.name,i]:null;}).filter(Boolean),
     ]},
@@ -925,11 +925,11 @@ function detailProfit(){
         return [co.name,coP];
       }),
     ]},
-    {label:'🤝 Góp vốn',color:'var(--pu)',rows:[
+    {label:'🤝 Góp vốn',color:'var(--pu)',total:pDist,rows:[
       ['Phân phối lợi nhuận',pDist],
       ...(db.equity||[]).map(a=>{const d=(a.dists||[]).reduce((s,d)=>s+toUSD(d.amount||0,a.cur),0);return d?['  └ '+a.name,d]:null;}).filter(Boolean),
     ]},
-    {label:'📥 Phải thu',color:'var(--ac)',rows:[
+    {label:'📥 Phải thu',color:'var(--ac)',total:pRecInt,rows:[
       ['Lãi phải thu',pRecInt],
       ...(db.receivables||[]).map(a=>{const i=(a.txs||[]).filter(t=>t.type==='int').reduce((s,t)=>s+toUSD(t.amt||0,a.cur),0);return i?['  └ '+a.counterparty,i]:null;}).filter(Boolean),
     ]},
@@ -944,18 +944,19 @@ function detailProfit(){
   openM('LN đã thực hiện — Chi tiết',`
     <div class="mb8">
       ${groups.map(g=>{
-        const gTotal=g.rows.reduce((s,[,v])=>s+v,0);
+        const gTotal=g.total!=null?g.total:g.rows.reduce((s,[,v])=>s+v,0);
         const visRows=g.rows.filter(([,v])=>v!==0);
         return `<div style="margin-bottom:10px;border:1px solid var(--bd);border-radius:var(--rs);overflow:hidden">
           <div class="flex aic jb" style="padding:9px 13px;background:var(--s2)">
             <span style="font-weight:700;font-size:.8rem;color:${g.color}">${g.label}</span>
             <span class="mn" style="color:${g.color}">${gTotal>=0?'+':''}${fU(gTotal)}</span>
           </div>
-          ${visRows.map(([lbl,val])=>`
-            <div class="flex aic jb" style="padding:7px 13px 7px 22px;border-top:1px solid var(--bd)">
-              <span style="font-size:.76rem;color:var(--t2)">${lbl}</span>
-              <span class="mn ${val>=0?'cgn':'crd'}">${val>=0?'+':''}${fU(val)}</span>
-            </div>`).join('')}
+          ${visRows.map(([lbl,val])=>{
+            const isSub=lbl.startsWith('  └') || lbl.startsWith('└');
+            return `<div class="flex aic jb" style="padding:${isSub?'5px 13px 5px 28px':'8px 13px'};border-top:1px solid var(--bd);background:${isSub?'rgba(0,0,0,.15)':'transparent'}">
+              <span style="font-size:${isSub?'.72rem':'.77rem'};color:${isSub?'var(--t3)':'var(--t2)'};font-weight:${isSub?'400':'600'}">${lbl}</span>
+              <span class="mn" style="font-size:${isSub?'.74rem':'.8rem'};color:${isSub?(val>=0?'rgba(74,222,128,.7)':'rgba(248,113,113,.7)'):(val>=0?'#4ade80':'#f87171')}">${val>=0?'+':''}${fU(val)}</span>
+            </div>`;}).join('')}
         </div>`;
       }).join('')}
       <div class="flex aic jb" style="padding:11px 13px;background:var(--adim);border:1px solid rgba(200,169,110,.25);border-radius:var(--rs)">
