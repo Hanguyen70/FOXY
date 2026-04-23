@@ -212,7 +212,7 @@ textarea{resize:vertical;min-height:56px;}
         <button class="btn bg sm desktop-only" onclick="syncDrive()">☁ GAS</button>
         <button onclick="syncToGitHub()" title="Sync lên GitHub → iPhone" class="btn bg sm desktop-only">⬆ Lưu cloud</button>
         <button class="btn bg sm" onclick="loadFromGitHub()" title="Tải dữ liệu mới nhất từ GitHub">⬇ Tải cloud</button>
-        <span id="syncInd" style="font-size:.8rem;min-width:16px;display:inline-block;text-align:center;cursor:default"></span>
+        <span id="syncInd" style="font-size:.72rem;min-width:70px;display:inline-flex;align-items:center;justify-content:center;padding:3px 8px;border-radius:20px;border:1px solid transparent;transition:all .3s;cursor:default"></span>
         <button class="btn bg sm" onclick="lockApp()" title="Khóa màn hình">🔒</button>
         <button class="btn brd sm desktop-only" onclick="endSession()" title="Sync cloud + xóa dữ liệu khỏi máy này" style="color:#f87171;border-color:#f87171">⏏ Thoát</button>
         <button class="btn bg sm desktop-only" onclick="exportJSON()">⬇ Export</button>
@@ -356,9 +356,9 @@ function autoCloudSync(){
   if(!_cloudSyncEnabled)return;
   clearTimeout(_cloudSyncTimer);
   const ind=document.getElementById('syncInd');
-  if(ind)ind.textContent='·';
+  if(ind){ind.textContent='☁ Chờ...';ind.style.cssText='background:rgba(200,169,110,.1);border-color:rgba(200,169,110,.3);color:var(--ac);font-size:.7rem;min-width:80px;display:inline-flex;align-items:center;justify-content:center;padding:3px 8px;border-radius:20px;border:1px solid;transition:all .3s';}
   _cloudSyncTimer=setTimeout(async()=>{
-    if(ind)ind.textContent='⏳';
+    if(ind){ind.textContent='☁ Đang lưu...';ind.style.cssText='background:rgba(96,165,250,.15);border-color:rgba(96,165,250,.4);color:#60a5fa;font-size:.7rem;min-width:80px;display:inline-flex;align-items:center;justify-content:center;padding:3px 8px;border-radius:20px;border:1px solid;transition:all .3s';}
     try{
       const dataFile='felix-data.json';
       const payload={...db,pin:localStorage.getItem('wtp3_pin')||undefined,_saved:new Date().toISOString()};
@@ -378,11 +378,11 @@ function autoCloudSync(){
       });
       if(push.ok){
         localStorage.setItem('wtp3_last_cloud_sync',new Date().toISOString());
-        if(ind)ind.textContent='☁✓';
-        setTimeout(()=>{if(ind)ind.textContent='';},3000);
+        if(ind){ind.textContent='☁ Đã lưu ✓';ind.style.cssText='background:rgba(74,222,128,.15);border-color:rgba(74,222,128,.4);color:#4ade80;font-size:.7rem;min-width:80px;display:inline-flex;align-items:center;justify-content:center;padding:3px 8px;border-radius:20px;border:1px solid;transition:all .3s';}
+        setTimeout(()=>{if(ind){ind.textContent='';ind.style.cssText='background:transparent;border-color:transparent;min-width:0;padding:0';}},4000);
       } else {
-        if(ind)ind.textContent='☁⚠';
-        setTimeout(()=>{if(ind)ind.textContent='';},4000);
+        if(ind){ind.textContent='☁ Lỗi ⚠';ind.style.cssText='background:rgba(248,113,113,.15);border-color:rgba(248,113,113,.4);color:#f87171;font-size:.7rem;min-width:80px;display:inline-flex;align-items:center;justify-content:center;padding:3px 8px;border-radius:20px;border:1px solid;transition:all .3s';}
+        setTimeout(()=>{if(ind){ind.textContent='';ind.style.cssText='background:transparent;border-color:transparent;min-width:0;padding:0';}},5000);
       }
     }catch(e){
       if(ind)ind.textContent='';
@@ -411,15 +411,25 @@ function _doSync(){
 }
 function updateSyncInd(){
   const el=document.getElementById('syncInd');if(!el)return;
-  const map={idle:['',''],pending:['⏳','var(--t3)'],syncing:['⟳','var(--ac)'],ok:['✓','var(--gn)'],error:['⚠','var(--rd)']};
-  const [ic,col]=map[_syncStatus]||['',''];
-  el.textContent=ic;el.style.color=col;
+  const base='font-size:.7rem;display:inline-flex;align-items:center;justify-content:center;padding:3px 10px;border-radius:20px;border:1px solid;transition:all .3s;';
+  const states={
+    idle:   {t:'',       bg:'transparent',  bc:'transparent',  c:'transparent'},
+    pending:{t:'⏳ GAS...',bg:'rgba(251,191,36,.12)',bc:'rgba(251,191,36,.35)',c:'#fbbf24'},
+    syncing:{t:'⟳ Sync...', bg:'rgba(96,165,250,.12)',bc:'rgba(96,165,250,.35)',c:'#60a5fa'},
+    ok:     {t:'✓ GAS OK', bg:'rgba(74,222,128,.12)',bc:'rgba(74,222,128,.35)',c:'#4ade80'},
+    error:  {t:'⚠ Lỗi',   bg:'rgba(248,113,113,.12)',bc:'rgba(248,113,113,.35)',c:'#f87171'},
+  };
+  const s=states[_syncStatus]||states.idle;
+  el.textContent=s.t;
+  el.style.cssText=base+'background:'+s.bg+';border-color:'+s.bc+';color:'+s.c+';min-width:'+(s.t?'80px':'0')+';';
   const last=localStorage.getItem('wtp3_last_sync');
   el.title=_syncStatus==='ok'?'Đã sync: '+new Date(last).toLocaleString('vi-VN')
     :_syncStatus==='error'?'Sync lỗi'
     :_syncStatus==='syncing'?'Đang sync...'
     :_syncStatus==='pending'?'Chuẩn bị sync...'
     :last?'Sync cuối: '+new Date(last).toLocaleString('vi-VN'):'';
+  if(_syncStatus==='ok')setTimeout(()=>{if(_syncStatus==='ok'){_syncStatus='idle';updateSyncInd();}},3000);
+  if(_syncStatus==='error')setTimeout(()=>{if(_syncStatus==='error'){_syncStatus='idle';updateSyncInd();}},5000);
 }
 const save=()=>{localStorage.setItem(DB,JSON.stringify(db));autoSync();autoCloudSync();};
 // Pre-load GitHub token
