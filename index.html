@@ -1259,45 +1259,88 @@ P.dashboard=function(){
         }
 
         // ── 3. ROI từng tài sản ──────────────────────────────────────────
-        let roiHtml='';
-        const allA=[
-          ...(db.vessels||[]).filter(a=>a.status!=='sold'),
-          ...(db.realestate||[]).filter(a=>a.status!=='sold'),
-        ];
-        const roiData=allA.map(a=>{
-          const capAdd=(a.investments||[]).reduce((s,i)=>s+(i.amount||0),0);
-          const tc=a.price+(a.buyCost||0)+capAdd;
-          if(!tc)return null;
-          const rentTotal=(a.rentals||[]).reduce((s,r)=>s+(r.amount||0),0);
-          const yrs=[...new Set((a.rentals||[]).map(r=>r.date?.slice(0,4)).filter(Boolean))];
-          const numYrs=yrs.length||1;
-          const roi=Math.round(rentTotal/tc/numYrs*100);
-          return {name:a.name,roi,tc,rentTotal};
-        }).filter(Boolean).sort((a,b)=>b.roi-a.roi).slice(0,5);
+        // ── KẾ HOẠCH THỰC HIỆN NĂM ──────────────────────────────────────
+        let planHtml='';
+        const selYr=String(new Date().getFullYear());
+        const prevYr=String(new Date().getFullYear()-1);
+        const now2=new Date();
+        const dayOfYr=Math.floor((now2-new Date(now2.getFullYear(),0,0))/864e5);
+        const daysInYr=(now2.getFullYear()%4===0)?366:365;
+        const yrPct=Math.round(dayOfYr/daysInYr*100);
 
-        if(roiData.length){
-          const maxRoi=Math.max(...roiData.map(r=>r.roi))||1;
-          const rrows=roiData.map(r=>{
-            const w=Math.round(r.roi/maxRoi*100);
-            const col=r.roi>=20?'#4ade80':r.roi>=10?'#fbbf24':'#f87171';
-            return '<div style="margin-bottom:6px">'
-              +'<div style="display:flex;justify-content:space-between;margin-bottom:2px">'
-              +'<span style="font-size:.72rem;color:var(--t2)">'+esc(r.name.length>18?r.name.slice(0,17)+'…':r.name)+'</span>'
-              +'<span style="font-size:.72rem;font-weight:700;color:'+col+'">'+r.roi+'%/năm</span>'
+        // Lấy tất cả tài sản có kế hoạch năm nay
+        const allAssets2=[
+          ...(db.realestate||[]).filter(a=>a.status!=='sold').map(a=>({...a,ic:'🏠',cur:a.cur})),
+          ...(db.vessels||[]).filter(a=>a.status!=='sold').map(a=>({...a,ic:getVesselModule(a.type)==='vessels'?'⚓':getVesselModule(a.type)==='machinery'?'🔧':'📦'})),
+        ];
+        const assetsWithPlan=allAssets2.filter(a=>{
+          const plan=db.perfData?.[a.id]?.years?.[selYr]?.plan;
+          return plan?.revenue||plan?.cost;
+        });
+
+        if(assetsWithPlan.length){
+          const totPlanRev=assetsWithPlan.reduce((s,a)=>s+toVND_perf((db.perfData[a.id].years[selYr].plan?.revenue||0),a.cur,+selYr),0);
+          const totActRev=assetsWithPlan.reduce((s,a)=>s+toVND_perf((db.perfData?.[a.id]?.years?.[selYr]?.revenue||0),a.cur,+selYr),0);
+          const totPrevRev=assetsWithPlan.reduce((s,a)=>s+toVND_perf((db.perfData?.[a.id]?.years?.[prevYr]?.revenue||0),a.cur,+prevYr),0);
+          const totPct=totPlanRev>0?Math.min(totActRev/totPlanRev*100,100):0;
+          const totCol=totPct>=100?'#4ade80':totPct>=yrPct?'#fbbf24':'#f87171';
+          const totChg=totPrevRev>0?((totActRev-totPrevRev)/totPrevRev*100):null;
+
+          // Header tổng
+          let prows='';
+          assetsWithPlan.forEach(a=>{
+            const pd=db.perfData[a.id];
+            const plan=pd.years[selYr].plan;
+            const actRev=pd.years?.[selYr]?.revenue||0;
+            const prevRev=pd.years?.[prevYr]?.revenue||0;
+            const planRev=plan.revenue||0;
+            const pct2=planRev>0?Math.min(actRev/planRev*100,100):0;
+            const col2=pct2>=100?'#4ade80':pct2>=yrPct?'#fbbf24':'#f87171';
+            const chg=prevRev>0?((actRev-prevRev)/prevRev*100):null;
+            const nm=a.name.length>16?a.name.slice(0,15)+'…':a.name;
+            const barW=pct2.toFixed(0);
+            const mkPos=yrPct; // vạch hiện tại
+            prows+='<div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--bd)">'
+              // Tên + % KH
+              +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'
+              +'<span style="font-size:.76rem;font-weight:600">'+a.ic+' '+esc(nm)+'</span>'
+              +'<span style="font-size:.76rem;font-weight:800;color:'+col2+'">'+pct2.toFixed(0)+'% KH</span>'
               +'</div>'
-              +'<div style="background:var(--s2);border-radius:3px;height:7px">'
-              +'<div style="background:'+col+';width:'+w+'%;height:100%;border-radius:3px"></div>'
-              +'</div></div>';
-          }).join('');
-          roiHtml='<div class="card mb10" style="padding:12px 14px">'
-            +'<div style="font-size:.65rem;color:var(--ac);letter-spacing:1.5px;font-weight:700;margin-bottom:10px">💹 ROI TỪNG TÀI SẢN</div>'
-            +'<div style="font-size:.62rem;color:var(--t3);margin-bottom:8px">DT thuê / Giá vốn / Số năm khai thác</div>'
-            +rrows
-            +'<div style="font-size:.62rem;color:var(--t3);margin-top:4px">🟢 ≥20%  🟡 ≥10%  🔴 &lt;10%</div>'
+              // Thanh tiến độ + vạch hiện tại
+              +'<div style="background:var(--s2);border-radius:4px;height:10px;position:relative;margin-bottom:5px">'
+              +'<div style="background:'+col2+';width:'+barW+'%;height:100%;border-radius:4px"></div>'
+              +'<div style="position:absolute;top:0;left:'+mkPos+'%;width:2px;height:100%;background:rgba(255,255,255,.4)"></div>'
+              +'</div>'
+              // KH vs TH
+              +'<div style="display:flex;align-items:center;justify-content:space-between">'
+              +'<span style="font-size:.68rem;color:var(--t3)">KH '+fA(planRev,a.cur)+' · TH '+fA(actRev,a.cur)+'</span>'
+              +(chg!==null?'<span style="font-size:.68rem;font-weight:600;color:'+(chg>=0?'#4ade80':'#f87171')+'">'+(chg>=0?'▲':'▼')+Math.abs(chg).toFixed(0)+'% vs '+prevYr+'</span>':'')
+              +'</div>'
+              +'</div>';
+          });
+
+          planHtml='<div class="card mb10" style="padding:12px 14px">'
+            +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'
+            +'<div style="font-size:.65rem;color:var(--ac);letter-spacing:1.5px;font-weight:700">📋 KẾ HOẠCH '+selYr+'</div>'
+            +'<div style="font-size:.65rem;color:var(--t3)">Vạch trắng = hôm nay ('+yrPct+'%)</div>'
+            +'</div>'
+            // Tổng
+            +'<div style="background:var(--s2);border-radius:8px;padding:8px 10px;margin-bottom:10px">'
+            +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">'
+            +'<span style="font-size:.72rem;font-weight:600">Tổng danh mục</span>'
+            +'<div style="display:flex;align-items:center;gap:6px">'
+            +'<span style="font-size:.76rem;font-weight:800;color:'+totCol+'">'+totPct.toFixed(0)+'% KH</span>'
+            +(totChg!==null?'<span style="font-size:.68rem;color:'+(totChg>=0?'#4ade80':'#f87171')+'">'+(totChg>=0?'▲':'▼')+Math.abs(totChg).toFixed(0)+'% vs '+prevYr+'</span>':'')
+            +'</div></div>'
+            +'<div style="background:var(--bd);border-radius:4px;height:8px;position:relative">'
+            +'<div style="background:'+totCol+';width:'+totPct.toFixed(0)+'%;height:100%;border-radius:4px"></div>'
+            +'<div style="position:absolute;top:0;left:'+yrPct+'%;width:2px;height:100%;background:rgba(255,255,255,.5)"></div>'
+            +'</div></div>'
+            +prows
             +'</div>';
         }
 
-        return trendHtml+compareHtml+roiHtml;
+        return trendHtml+compareHtml+planHtml;
       })()
 
       // Sync note
