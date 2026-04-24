@@ -3440,12 +3440,12 @@ function viewGHist(id){
     </div>
     <div class="tw"><table><thead><tr><th>Ngày</th><th>Loại</th><th>Số lượng</th><th>Giá/ĐV</th><th>Thành tiền</th><th></th></tr></thead>
       <tbody>${!txs.length?'<tr><td colspan="5" style="text-align:center;color:var(--t3);padding:16px">Chưa có</td></tr>':
-        txs.map((t,idx)=>`<tr><td class="mn">${fD(t.date)}</td>
-          <td><span style="color:${t.type==='buy'?'var(--yw)':'var(--or)'};font-weight:700">${t.type==='buy'?'▼ Mua':'▲ Bán'}</span></td>
-          <td class="mn cyw">${t.qty.toLocaleString('vi-VN',{maximumFractionDigits:3})} ${unit}</td>
-          <td class="mn">${fV(t.price)}</td>
-          <td class="mn ${t.type==='buy'?'crd':'cgn'}">${t.type==='buy'?'−':'+'} ${fV(t.total)}</td>
-          <td><button class="btn brd sm" data-gid="${g.id}" data-idx="${idx}" onclick="delGoldTx(this.dataset.gid,+this.dataset.idx)">🗑</button></td></tr>`).join('')}
+        txs.map((t,idx)=>{const origIdx=(g.txs||[]).length-1-idx;return '<tr><td class="mn">'+fD(t.date)+'</td>'
+          +'<td><span style="color:'+(t.type==='buy'?'var(--yw)':'var(--or)')+';font-weight:700">'+(t.type==='buy'?'▼ Mua':'▲ Bán')+'</span></td>'
+          +'<td class="mn cyw">'+t.qty.toLocaleString('vi-VN',{maximumFractionDigits:3})+' '+unit+'</td>'
+          +'<td class="mn">'+fV(t.price)+'</td>'
+          +'<td class="mn '+(t.type==='buy'?'crd':'cgn')+'">'+(t.type==='buy'?'−':'+')+' '+fV(t.total)+'</td>'
+          +'<td><button class="btn brd sm" data-gid="'+g.id+'" data-idx="'+origIdx+'" onclick="delGoldTx(this.dataset.gid,+this.dataset.idx)">🗑</button></td></tr>';}).join('')}
       </tbody></table></div>`,'','lg');
 }
 function delGL(id){
