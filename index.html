@@ -711,6 +711,71 @@ function syncDrive(){
 
 // ── DASHBOARD ────────────────────────────────────────────────────
 
+
+// ── SỬA KẾ HOẠCH TRÊN MOBILE ─────────────────────────────────────────────────
+function editMobilePlan(assetId,yr){
+  const allA=[
+    ...(db.realestate||[]).map(a=>({...a,ic:'🏠'})),
+    ...(db.vessels||[]).map(a=>({...a,ic:getVesselModule(a.type)==='vessels'?'⚓':getVesselModule(a.type)==='machinery'?'🔧':'📦'})),
+  ];
+  const a=allA.find(x=>x.id===assetId);
+  if(!a)return;
+  const existing=db.perfData?.[assetId]?.years?.[yr]?.plan||{};
+
+  showMobileDetail(`
+    <div style="min-height:100vh">
+      <div style="position:sticky;top:0;z-index:10;background:var(--s2);border-bottom:1px solid var(--bd);padding:12px 16px;display:flex;align-items:center;gap:12px">
+        <button onclick="closeMobileDetail();go('dashboard')" style="background:none;border:none;color:var(--ac);font-size:1.1rem;cursor:pointer;padding:4px">←</button>
+        <div>
+          <div style="font-size:.65rem;color:var(--t3);text-transform:uppercase;letter-spacing:1px">✏️ Sửa kế hoạch ${yr}</div>
+          <div style="font-size:.9rem;font-weight:700">${a.ic} ${esc(a.name)}</div>
+        </div>
+      </div>
+      <div style="padding:16px">
+        <div class="card mb12" style="padding:16px">
+          <div style="font-size:.72rem;color:var(--t3);margin-bottom:14px">Nhập kế hoạch Doanh thu và Chi phí cho năm ${yr}</div>
+          <div class="fg mb12">
+            <label style="font-size:.74rem">KH Doanh thu (${a.cur})</label>
+            <input type="number" id="mp-rev" step="0.01" value="${existing.revenue||''}" placeholder="0"
+              style="background:var(--s2);border:1px solid var(--bd);border-radius:var(--rs);padding:10px 12px;color:var(--tx);width:100%;font-size:.9rem">
+          </div>
+          <div class="fg mb16">
+            <label style="font-size:.74rem">KH Chi phí (${a.cur})</label>
+            <input type="number" id="mp-cost" step="0.01" value="${existing.cost||''}" placeholder="0"
+              style="background:var(--s2);border:1px solid var(--bd);border-radius:var(--rs);padding:10px 12px;color:var(--tx);width:100%;font-size:.9rem">
+          </div>
+          ${existing.revenue?`<div style="background:var(--s2);border-radius:var(--rs);padding:10px 12px;margin-bottom:14px;font-size:.74rem;color:var(--t3)">
+            Hiện tại: DT ${fA(existing.revenue,a.cur)} · CP ${fA(existing.cost||0,a.cur)}
+          </div>`:''}
+          <button onclick="saveMobilePlan('${assetId}','${yr}')"
+            style="width:100%;background:var(--ac);color:#07090e;border:none;padding:12px;border-radius:var(--rs);font-size:.85rem;font-weight:700;cursor:pointer;margin-bottom:8px">
+            💾 Lưu kế hoạch
+          </button>
+          <button onclick="closeMobileDetail();go('dashboard')"
+            style="width:100%;background:var(--s2);color:var(--t2);border:1px solid var(--bd);padding:10px;border-radius:var(--rs);font-size:.82rem;cursor:pointer">
+            Hủy
+          </button>
+        </div>
+      </div>
+    </div>
+  `);
+}
+
+function saveMobilePlan(assetId,yr){
+  const rev=parseFloat(document.getElementById('mp-rev')?.value||'0');
+  const cost=parseFloat(document.getElementById('mp-cost')?.value||'0');
+  if(!rev&&!cost){toast('Nhập ít nhất Doanh thu hoặc Chi phí','er');return;}
+  if(!db.perfData)db.perfData={};
+  if(!db.perfData[assetId])db.perfData[assetId]={years:{}};
+  if(!db.perfData[assetId].years)db.perfData[assetId].years={};
+  if(!db.perfData[assetId].years[yr])db.perfData[assetId].years[yr]={};
+  db.perfData[assetId].years[yr].plan={revenue:rev,cost:cost};
+  save();
+  toast('✅ Đã lưu kế hoạch '+yr);
+  closeMobileDetail();
+  go('dashboard');
+}
+
 // ── MOBILE FULL-SCREEN ASSET DETAIL ──────────────────────────────────────────
 function showMobileDetail(html){
   // Tạo overlay full screen
@@ -1297,14 +1362,17 @@ P.dashboard=function(){
             const pct2=planRev>0?Math.min(actRev/planRev*100,100):0;
             const col2=pct2>=100?'#4ade80':pct2>=yrPct?'#fbbf24':'#f87171';
             const chg=prevRev>0?((actRev-prevRev)/prevRev*100):null;
-            const nm=a.name.length>16?a.name.slice(0,15)+'…':a.name;
+            const nm=a.name.length>14?a.name.slice(0,13)+'…':a.name;
             const barW=pct2.toFixed(0);
             const mkPos=yrPct; // vạch hiện tại
             prows+='<div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--bd)">'
-              // Tên + % KH
+              // Tên + % KH + nút sửa
               +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'
               +'<span style="font-size:.76rem;font-weight:600">'+a.ic+' '+esc(nm)+'</span>'
+              +'<div style="display:flex;align-items:center;gap:6px">'
               +'<span style="font-size:.76rem;font-weight:800;color:'+col2+'">'+pct2.toFixed(0)+'% KH</span>'
+              +'<button data-id="'+a.id+'" data-yr="'+selYr+'" onclick="editMobilePlan(this.dataset.id,this.dataset.yr)" style="background:rgba(200,169,110,.15);border:1px solid rgba(200,169,110,.3);color:var(--ac);font-size:.65rem;padding:2px 8px;border-radius:8px;cursor:pointer">✏️</button>'
+              +'</div>'
               +'</div>'
               // Thanh tiến độ + vạch hiện tại
               +'<div style="background:var(--s2);border-radius:4px;height:10px;position:relative;margin-bottom:5px">'
@@ -1322,7 +1390,9 @@ P.dashboard=function(){
           planHtml='<div class="card mb10" style="padding:12px 14px">'
             +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'
             +'<div style="font-size:.65rem;color:var(--ac);letter-spacing:1.5px;font-weight:700">📋 KẾ HOẠCH '+selYr+'</div>'
-            +'<div style="font-size:.65rem;color:var(--t3)">Vạch trắng = hôm nay ('+yrPct+'%)</div>'
+            +'<div style="display:flex;align-items:center;gap:6px">'
+            +'<span style="font-size:.62rem;color:var(--t3)">▏= hôm nay ('+yrPct+'%)</span>'
+            +'</div>'
             +'</div>'
             // Tổng
             +'<div style="background:var(--s2);border-radius:8px;padding:8px 10px;margin-bottom:10px">'
