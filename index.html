@@ -1697,9 +1697,11 @@ function recalcSnapshots(){
   });
 
   // Xóa snapshots tự động cũ, giữ snapshots thủ công
-  db.snapshots=(db.snapshots||[]).filter(s=>!s.auto);
-  // Thêm snapshots mới
-  db.snapshots=[...db.snapshots,...newSnaps].sort((a,b)=>a.date.localeCompare(b.date));
+  const manualSnaps=(db.snapshots||[]).filter(s=>!s.auto);
+  const manualYears=new Set(manualSnaps.map(s=>s.date.slice(0,4)));
+  // Chỉ thêm snapshots tự động cho năm chưa có thủ công
+  const filteredNewSnaps=newSnaps.filter(s=>!manualYears.has(s.date.slice(0,4)));
+  db.snapshots=[...manualSnaps,...filteredNewSnaps].sort((a,b)=>a.date.localeCompare(b.date));
   save();
   toast('✅ Đã tạo '+newSnaps.length+' snapshots tự động');
   P.reports();
