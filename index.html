@@ -1198,9 +1198,9 @@ P.dashboard=function(){
         let trendHtml='';
         if(snaps.length>=2){
           const snapsSorted=[...snaps].sort((a,b)=>a.date.localeCompare(b.date));
-          const maxNW=Math.max(...snapsSorted.map(s=>s.nw||0))||1;
+          const maxNW=Math.max(...snapsSorted.map(s=>s.nw||s.value||0))||1;
           const rows2=snapsSorted.slice(-5).map(s=>{
-            const pct=Math.round((s.nw||0)/maxNW*100);
+            const pct=Math.round((s.nw||s.value||0)/maxNW*100);
             const yr=s.date.slice(0,4);
             const isLast=s===snapsSorted[snapsSorted.length-1];
             const col=isLast?'#c8a96e':'#378ADD';
@@ -1208,11 +1208,11 @@ P.dashboard=function(){
               +'<span style="font-size:.68rem;color:var(--t3);min-width:28px">'+yr+'</span>'
               +'<div style="flex:1;background:var(--s2);border-radius:3px;height:14px">'
               +'<div style="background:'+col+';width:'+pct+'%;height:100%;border-radius:3px"></div></div>'
-              +'<span style="font-size:.68rem;font-weight:600;color:'+col+';min-width:42px;text-align:right">'+fU(s.nw||0)+'</span>'
+              +'<span style="font-size:.68rem;font-weight:600;color:'+col+';min-width:42px;text-align:right">'+fU(s.nw||s.value||0)+'</span>'
               +'</div>';
           }).join('');
-          const first=snapsSorted[0].nw||0;
-          const last=snapsSorted[snapsSorted.length-1].nw||0;
+          const first=snapsSorted[0].nw||snapsSorted[0].value||0;
+          const last=snapsSorted[snapsSorted.length-1].nw||snapsSorted[snapsSorted.length-1].value||0;
           const growth=first>0?Math.round((last-first)/first*100):0;
           trendHtml='<div class="card mb10" style="padding:12px 14px">'
             +'<div style="font-size:.65rem;color:var(--ac);letter-spacing:1.5px;font-weight:700;margin-bottom:10px">📈 XU HƯỚNG TÀI SẢN RÒNG</div>'
@@ -1228,6 +1228,7 @@ P.dashboard=function(){
           const snapsSorted2=[...snaps].sort((a,b)=>a.date.localeCompare(b.date));
           const cur=snapsSorted2[snapsSorted2.length-1];
           const prev=snapsSorted2[snapsSorted2.length-2];
+          const curNW=cur.nw||cur.value||0,prevNW=prev.nw||prev.value||0;
           const curYr=cur.date.slice(0,4),prevYr=prev.date.slice(0,4);
           const cats2=[
             {ic:'⚓',lb:'Tàu',c:'vs'},{ic:'🏠',lb:'Nhà',c:'re'},
@@ -1642,6 +1643,14 @@ function recalcSnapshots(){
   if(!confirm(msg))return;
 
   const getRate=y=>getRateForYear(y)||db.exRate||25400;
+  // Helper chuyển đổi về USD dùng tỷ giá năm yr
+  const toUSDyr=(v,c,yr)=>{
+    if(!v)return 0;
+    const r=getRate(yr);
+    if(c==='USD')return +v;
+    if(c==='VND')return (+v)/r;
+    return (+v)*(getFXtoUSD(c,yr)||1);
+  };
 
   const newSnaps=sortedYears.map(yr=>{
     const endDate=yr+'-12-31';
@@ -1650,50 +1659,48 @@ function recalcSnapshots(){
     // Tài sản (RE + Vessels) mua trước hoặc trong năm yr
     [...(db.realestate||[]),...(db.vessels||[])].forEach(a=>{
       if(!a.year||+a.year>yr)return;
-      const rate=getRate(yr);
       const capAdd=(a.investments||[]).filter(i=>!i.date||i.date.slice(0,4)<=String(yr)).reduce((s,i)=>s+(i.amount||0),0);
       const tc=a.price+(a.buyCost||0)+capAdd;
-      // Tìm appraisal gần nhất trước năm yr
+      // Tìm appraisal gần nhất trước hoặc trong năm yr
       const appr=(a.appraisals||[]).filter(ap=>ap.date&&ap.date.slice(0,4)<=String(yr)).sort((x,y2)=>y2.date.localeCompare(x.date))[0];
-      const val=appr?appr.val:(a.year===yr?(tc*0.95):tc); // năm mua dùng 95% giá vốn
-      nw+=toUSD(val,a.cur,yr);
+      const val=appr?(appr.value||appr.val||tc):tc;
+      nw+=toUSDyr(val,a.cur,yr);
     });
 
-    // Tiền mặt có trước năm yr
+    // Tiền mặt
     (db.cash||[]).forEach(a=>{
       if(a.year&&+a.year>yr)return;
-      nw+=toUSD(a.balance||a.amount||0,a.cur||'VND',yr);
+      nw+=toUSDyr(a.balance||a.amount||0,a.cur||'VND',yr);
     });
 
-    // Vàng có trước năm yr
+    // Vàng
     (db.gold||[]).forEach(a=>{
       if(a.year&&+a.year>yr)return;
-      const goldRate=(db.rates||[]).filter(r=>r.type==='sjc'&&r.date&&r.date.slice(0,4)<=String(yr)).sort((x,y2)=>y2.date.localeCompare(x.date))[0];
+      const goldRate=(db.rates||[]).filter(r=>(r.type==='sjc'||r.type==='gold')&&r.date&&r.date.slice(0,4)<=String(yr)).sort((x,y2)=>y2.date.localeCompare(x.date))[0];
       const pricePerTael=goldRate?.value||0;
-      nw+=toUSD((a.weight||0)*pricePerTael*(a.unit==='chi'?0.1:1),'VND',yr);
+      const weightTael=(a.weight||0)*(a.unit==='chi'?0.1:a.unit==='gram'?0.0267:1);
+      nw+=toUSDyr(weightTael*pricePerTael,'VND',yr);
     });
-
-    // Trừ nợ phải trả hiện tại (dùng số hiện tại làm ước tính)
-    const debts=(db.payables||[]).reduce((s,p)=>{
-      if(p.year&&+p.year>yr)return s;
-      return s+toUSD(p.amount||0,p.cur||'VND',yr);
-    },0);
-    nw-=debts;
-
-    // Cộng phải thu
-    const recs=(db.receivables||[]).reduce((s,r)=>{
-      if(r.year&&+r.year>yr)return s;
-      return s+toUSD(r.amount||0,r.cur||'VND',yr);
-    },0);
-    nw+=recs;
 
     // Góp vốn
     (db.equity||[]).forEach(a=>{
       if(a.year&&+a.year>yr)return;
-      nw+=toUSD(calcEQVal(a),a.cur,yr);
+      nw+=toUSDyr(calcEQVal(a),a.cur,yr);
     });
 
-    return {id:uid(),date:endDate,value:Math.max(nw,0),note:'Tự động tính',auto:true};
+    // Cộng phải thu
+    (db.receivables||[]).forEach(r=>{
+      if(r.year&&+r.year>yr)return;
+      nw+=toUSDyr(r.amount||0,r.cur||'VND',yr);
+    });
+
+    // Trừ nợ phải trả
+    (db.payables||[]).forEach(p=>{
+      if(p.year&&+p.year>yr)return;
+      nw-=toUSDyr(p.amount||0,p.cur||'VND',yr);
+    });
+
+    return {id:uid(),date:endDate,nw:Math.max(nw,0),note:'Tự động tính',auto:true};
   });
 
   // Xóa snapshots tự động cũ, giữ snapshots thủ công
