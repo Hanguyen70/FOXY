@@ -1594,7 +1594,7 @@ P.reports=function(){
     <div class="st">Báo cáo & Biểu đồ</div><div class="ss">${fD(today())}</div>
     <div class="card mb16">
       <div class="flex aic jb mb12"><div class="ct" style="margin:0">Net Worth theo thời gian</div>
-        <button class="btn bg sm" onclick="addSnap()">＋ Ghi nhận</button></div>
+        <button class="btn bg sm" onclick="addSnap()">＋ Ghi nhận</button><button class="btn bg sm" onclick="recalcSnapshots()" title="Tự động tính NW từng năm từ dữ liệu">🔄 Tính lại</button></div>
       <div class="cw"><canvas id="r-nw"></canvas></div></div>
     <div class="g g3 mb16">
       <div class="stat"><div class="sl">LN đã thực hiện</div><div class="sv cgn">${fU(rp)}</div><div class="sb">${fV(rp*db.exRate)}</div></div>
@@ -1619,6 +1619,92 @@ P.reports=function(){
       scales:{x:{ticks:{color:'#4e5e78'},grid:{color:'rgba(255,255,255,.04)'}},
         y:{ticks:{color:'#4e5e78',callback:v=>fU(v)},grid:{color:'rgba(255,255,255,.04)'}}}}});
 };
+
+// ── TÍNH LẠI SNAPSHOTS TỪ DỮ LIỆU LỊCH SỬ ───────────────────────────────────
+function recalcSnapshots(){
+  // Thu thập tất cả các năm có dữ liệu
+  const years=new Set();
+  (db.realestate||[]).forEach(a=>{if(a.year)years.add(+a.year);});
+  (db.vessels||[]).forEach(a=>{if(a.year)years.add(+a.year);});
+  (db.cash||[]).forEach(a=>{if(a.year)years.add(+a.year);});
+  (db.gold||[]).forEach(a=>{if(a.year)years.add(+a.year);});
+  // Thêm các năm có rental
+  [...(db.realestate||[]),...(db.vessels||[])].forEach(a=>{
+    (a.rentals||[]).forEach(r=>{if(r.date)years.add(+r.date.slice(0,4));});
+  });
+  const curYear=new Date().getFullYear();
+  const sortedYears=[...years].filter(y=>y>=2000&&y<=curYear).sort();
+  if(sortedYears.length<2){toast('Cần ít nhất 2 năm dữ liệu','er');return;}
+
+  const msg='Tự động tính Net Worth cho '+sortedYears.length+' năm:\n'
+    +sortedYears.join(', ')
+    +'\n\nDữ liệu tính từ: giá mua + DT thuê tích lũy + tiền mặt + vàng\nKết quả gần đúng — không chính xác 100%\n\nTiếp tục?';
+  if(!confirm(msg))return;
+
+  const getRate=y=>getRateForYear(y)||db.exRate||25400;
+
+  const newSnaps=sortedYears.map(yr=>{
+    const endDate=yr+'-12-31';
+    let nw=0;
+
+    // Tài sản (RE + Vessels) mua trước hoặc trong năm yr
+    [...(db.realestate||[]),...(db.vessels||[])].forEach(a=>{
+      if(!a.year||+a.year>yr)return;
+      const rate=getRate(yr);
+      const capAdd=(a.investments||[]).filter(i=>!i.date||i.date.slice(0,4)<=String(yr)).reduce((s,i)=>s+(i.amount||0),0);
+      const tc=a.price+(a.buyCost||0)+capAdd;
+      // Tìm appraisal gần nhất trước năm yr
+      const appr=(a.appraisals||[]).filter(ap=>ap.date&&ap.date.slice(0,4)<=String(yr)).sort((x,y2)=>y2.date.localeCompare(x.date))[0];
+      const val=appr?appr.val:(a.year===yr?(tc*0.95):tc); // năm mua dùng 95% giá vốn
+      nw+=toUSD(val,a.cur,yr);
+    });
+
+    // Tiền mặt có trước năm yr
+    (db.cash||[]).forEach(a=>{
+      if(a.year&&+a.year>yr)return;
+      nw+=toUSD(a.balance||a.amount||0,a.cur||'VND',yr);
+    });
+
+    // Vàng có trước năm yr
+    (db.gold||[]).forEach(a=>{
+      if(a.year&&+a.year>yr)return;
+      const goldRate=(db.rates||[]).filter(r=>r.type==='sjc'&&r.date&&r.date.slice(0,4)<=String(yr)).sort((x,y2)=>y2.date.localeCompare(x.date))[0];
+      const pricePerTael=goldRate?.value||0;
+      nw+=toUSD((a.weight||0)*pricePerTael*(a.unit==='chi'?0.1:1),'VND',yr);
+    });
+
+    // Trừ nợ phải trả hiện tại (dùng số hiện tại làm ước tính)
+    const debts=(db.payables||[]).reduce((s,p)=>{
+      if(p.year&&+p.year>yr)return s;
+      return s+toUSD(p.amount||0,p.cur||'VND',yr);
+    },0);
+    nw-=debts;
+
+    // Cộng phải thu
+    const recs=(db.receivables||[]).reduce((s,r)=>{
+      if(r.year&&+r.year>yr)return s;
+      return s+toUSD(r.amount||0,r.cur||'VND',yr);
+    },0);
+    nw+=recs;
+
+    // Góp vốn
+    (db.equity||[]).forEach(a=>{
+      if(a.year&&+a.year>yr)return;
+      nw+=toUSD(calcEQVal(a),a.cur,yr);
+    });
+
+    return {id:uid(),date:endDate,value:Math.max(nw,0),note:'Tự động tính',auto:true};
+  });
+
+  // Xóa snapshots tự động cũ, giữ snapshots thủ công
+  db.snapshots=(db.snapshots||[]).filter(s=>!s.auto);
+  // Thêm snapshots mới
+  db.snapshots=[...db.snapshots,...newSnaps].sort((a,b)=>a.date.localeCompare(b.date));
+  save();
+  toast('✅ Đã tạo '+newSnaps.length+' snapshots tự động');
+  P.reports();
+}
+
 function addSnap(){
   const nw=calcNW();
   openM('Ghi nhận điểm Net Worth',`
