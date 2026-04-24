@@ -339,7 +339,31 @@ async function syncToGitHub(){
       headers:{'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','Content-Type':'application/json'},
       body:JSON.stringify(body)
     });
-    if(!push.ok){const e=await push.json();throw new Error(e.message||push.status);}
+    if(!push.ok){
+      const e=await push.json();
+      if(push.status===409||push.status===422||(e.message&&e.message.includes('does not match'))){
+        // SHA mismatch → fetch SHA mới và retry
+        const recheck=await fetch('https://api.github.com/repos/'+GH_REPO+'/contents/'+dataFile+'?ref='+GH_BRANCH,{
+          headers:{'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json'}
+        });
+        if(recheck.ok){
+          const rj=await recheck.json();
+          body.sha=rj.sha;
+          const retry=await fetch('https://api.github.com/repos/'+GH_REPO+'/contents/'+dataFile,{
+            method:'PUT',
+            headers:{'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','Content-Type':'application/json'},
+            body:JSON.stringify(body)
+          });
+          if(retry.ok){
+            localStorage.setItem('wtp3_last_cloud_sync',new Date().toISOString());
+            if(ind){ind.textContent='✓';setTimeout(()=>{if(ind)ind.textContent='';},4000);}
+            toast('✅ Đã lưu lên cloud');
+            return;
+          }
+        }
+      }
+      throw new Error(e.message||push.status);
+    }
     if(ind)ind.textContent='✓';
     toast('✅ Đã lưu lên cloud — iPhone bấm ⬇ Tải cloud để cập nhật');
     setTimeout(()=>{if(ind)ind.textContent='';},4000);
