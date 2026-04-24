@@ -907,7 +907,26 @@ function viewMobileRE(id){
           ${(()=>{
             const yrs=[...new Set((a.rentals||[]).map(r=>r.date?.slice(0,4)).filter(Boolean))];
             const avgPerYear=yrs.length?rentTotal/yrs.length:0;
-            if(!avgPerYear||pct>=100)return '';
+            if(pct>=100){
+              // Đã hòa vốn — tìm năm thực tế
+              const findBepYear=(rentals,costBase)=>{
+                if(!rentals||!rentals.length||!costBase)return null;
+                const sorted=[...rentals].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+                let cumul=0;
+                for(const r of sorted){cumul+=(r.amount||0);if(cumul>=costBase)return r.date?r.date.slice(0,4):null;}
+                return null;
+              };
+              const bepYearActual=findBepYear(a.rentals,tc);
+              const surplus=rentTotal-tc;
+              return '<div style="margin-top:8px;padding:10px 12px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.25);border-radius:var(--rs)">'
+                +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'
+                +'<span style="font-size:.76rem;font-weight:700;color:#4ade80">✅ Đã hòa vốn!</span>'
+                +(bepYearActual?'<span style="font-size:.72rem;color:#4ade80;font-weight:700">Năm '+bepYearActual+'</span>':'')
+                +'</div>'
+                +'<div style="font-size:.72rem;color:#4ade80">Lợi nhuận thêm: +'+fA(surplus,a.cur)+'</div>'
+                +'</div>';
+            }
+            if(!avgPerYear)return '';
             const yrsLeft=Math.ceil(Math.max(nbv,0)/avgPerYear);
             const bepYear=new Date().getFullYear()+yrsLeft;
             return '<div style="margin-top:8px;padding:8px 10px;background:rgba(200,169,110,.08);border-radius:var(--rs);display:flex;align-items:center;justify-content:space-between">'
@@ -920,7 +939,25 @@ function viewMobileRE(id){
             const yrs=[...new Set((a.rentals||[]).map(r=>r.date?.slice(0,4)).filter(Boolean))];
             const avgPerYear=yrs.length?rentTotal/yrs.length:0;
             const nbvRE=Math.max(tc-rentTotal,0);
-            if(!avgPerYear||pct>=100)return '';
+            if(pct>=100){
+              const findBepYear=(rentals,costBase)=>{
+                if(!rentals||!rentals.length||!costBase)return null;
+                const sorted=[...rentals].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+                let cumul=0;
+                for(const r of sorted){cumul+=(r.amount||0);if(cumul>=costBase)return r.date?r.date.slice(0,4):null;}
+                return null;
+              };
+              const bepYearActual=findBepYear(a.rentals,tc);
+              const surplus=rentTotal-tc;
+              return '<div style="margin-top:8px;padding:10px 12px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.25);border-radius:var(--rs)">'
+                +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'
+                +'<span style="font-size:.76rem;font-weight:700;color:#4ade80">✅ Đã hòa vốn!</span>'
+                +(bepYearActual?'<span style="font-size:.72rem;color:#4ade80;font-weight:700">Năm '+bepYearActual+'</span>':'')
+                +'</div>'
+                +'<div style="font-size:.72rem;color:#4ade80">Lợi nhuận thêm: +'+fA(surplus,a.cur)+'</div>'
+                +'</div>';
+            }
+            if(!avgPerYear)return '';
             const yrsLeft=Math.ceil(nbvRE/avgPerYear);
             const bepYear=new Date().getFullYear()+yrsLeft;
             return '<div style="margin-top:8px;padding:8px 10px;background:rgba(200,169,110,.08);border-radius:var(--rs);display:flex;align-items:center;justify-content:space-between">'
