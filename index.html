@@ -685,6 +685,304 @@ function syncDrive(){
 }
 
 // ── DASHBOARD ────────────────────────────────────────────────────
+
+// ── MOBILE FULL-SCREEN ASSET DETAIL ──────────────────────────────────────────
+function showMobileDetail(html){
+  // Tạo overlay full screen
+  let overlay=document.getElementById('mobileDetailOverlay');
+  if(!overlay){
+    overlay=document.createElement('div');
+    overlay.id='mobileDetailOverlay';
+    overlay.style.cssText='position:fixed;inset:0;background:var(--bg);z-index:9999;overflow-y:auto;display:none;-webkit-overflow-scrolling:touch';
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML=html;
+  overlay.style.display='block';
+  overlay.scrollTop=0;
+}
+
+function closeMobileDetail(){
+  const el=document.getElementById('mobileDetailOverlay');
+  if(el)el.style.display='none';
+}
+
+// Lưu định giá từ mobile
+function saveMobileAppraisal(id,type){
+  const cv=parseFloat(document.getElementById('m-curval')?.value||'0');
+  const note=document.getElementById('m-appr-note')?.value?.trim()||'';
+  if(!cv){toast('Nhập giá trị định giá','er');return;}
+  const arr=type==='re'?db.realestate:db.vessels;
+  const a=arr?.find(x=>x.id===id);
+  if(!a){toast('Không tìm thấy tài sản','er');return;}
+  a.curVal=cv;
+  a.appraisals=a.appraisals||[];
+  a.appraisals.push({date:today(),value:cv,note,source:'Mobile'});
+  save();
+  toast('✅ Đã cập nhật định giá');
+  // Refresh detail
+  if(type==='re')viewMobileRE(id);
+  else viewMobileVS(id);
+}
+
+// ── TRANG CHI TIẾT TÀU/MÁY/KHÁC ─────────────────────────────────────────────
+function viewMobileVS(id){
+  const a=(db.vessels||[]).find(x=>x.id===id);
+  if(!a)return;
+  const mod=getVesselModule(a.type);
+  const ic=mod==='vessels'?'⚓':mod==='machinery'?'🔧':'📦';
+  const typeLbl=mod==='vessels'?'Tàu thuyền':mod==='machinery'?'Máy móc/TB':'Tài sản khác';
+  const rate=db.exRate||25400;
+  const capAdd=(a.investments||[]).reduce((s,i)=>s+(i.amount||0),0);
+  const tc=a.price+(a.buyCost||0)+capAdd;
+  const rentTotal=(a.rentals||[]).reduce((s,r)=>s+(r.amount||0),0);
+  const pct=tc>0?Math.min(rentTotal/tc*100,100):0;
+  const col=pct>=100?'#4ade80':pct>=60?'#fbbf24':'#f87171';
+  const nbv=Math.max(tc-rentTotal,0);
+  const dual2=(v,c)=>{
+    const usd=toUSD(v,c);
+    const vnd=Math.round(usd*rate);
+    return '<span style="font-weight:700">'+fA(v,c)+'</span>'+(c!=='VND'?'<br><span style="font-size:.7rem;color:var(--t3)">≈'+vnd.toLocaleString('vi-VN')+'₫</span>':'');
+  };
+
+  const showApprForm=()=>{
+    const el=document.getElementById('m-appr-form');
+    if(el)el.style.display=el.style.display==='none'?'block':'none';
+  };
+
+  showMobileDetail(`
+    <div style="min-height:100vh;padding-bottom:40px">
+      <!-- Header -->
+      <div style="position:sticky;top:0;z-index:10;background:var(--s2);border-bottom:1px solid var(--bd);padding:12px 16px;display:flex;align-items:center;gap:12px">
+        <button onclick="closeMobileDetail()" style="background:none;border:none;color:var(--ac);font-size:1.1rem;cursor:pointer;padding:4px">← </button>
+        <div>
+          <div style="font-size:.65rem;color:var(--t3);text-transform:uppercase;letter-spacing:1px">${ic} ${typeLbl}</div>
+          <div style="font-size:.9rem;font-weight:700;color:var(--tx)">${esc(a.name)}</div>
+        </div>
+      </div>
+      <div style="padding:16px">
+
+        <!-- Thông tin cơ bản -->
+        <div class="card mb12">
+          <div style="font-size:.65rem;color:var(--ac);letter-spacing:1.5px;font-weight:700;margin-bottom:10px">📋 THÔNG TIN</div>
+          ${a.type?`<div class="flex aic jb" style="padding:7px 0;border-bottom:1px solid var(--bd)"><span style="font-size:.76rem;color:var(--t3)">Loại</span><span style="font-size:.78rem">${esc(a.type)}</span></div>`:''}
+          ${a.year?`<div class="flex aic jb" style="padding:7px 0;border-bottom:1px solid var(--bd)"><span style="font-size:.76rem;color:var(--t3)">Năm mua</span><span style="font-size:.78rem;font-weight:600">${a.year}</span></div>`:''}
+          ${a.date?`<div class="flex aic jb" style="padding:7px 0;border-bottom:1px solid var(--bd)"><span style="font-size:.76rem;color:var(--t3)">Ngày mua</span><span style="font-size:.78rem">${fD(a.date)}</span></div>`:''}
+          <div class="flex aic jb" style="padding:7px 0;border-bottom:1px solid var(--bd)">
+            <span style="font-size:.76rem;color:var(--t3)">Giá mua</span>
+            <div style="text-align:right">${dual2(a.price,a.cur)}</div>
+          </div>
+          ${a.buyCost?`<div class="flex aic jb" style="padding:7px 0;border-bottom:1px solid var(--bd)"><span style="font-size:.76rem;color:var(--t3)">Chi phí mua</span><div style="text-align:right">${dual2(a.buyCost,a.cur)}</div></div>`:''}
+          ${capAdd?`<div class="flex aic jb" style="padding:7px 0;border-bottom:1px solid var(--bd)"><span style="font-size:.76rem;color:var(--t3)">Đầu tư thêm</span><div style="text-align:right">${dual2(capAdd,a.cur)}</div></div>`:''}
+          <div class="flex aic jb" style="padding:9px 0;background:rgba(200,169,110,.06);margin:4px -6px -6px;padding:9px 6px;border-radius:0 0 var(--rs) var(--rs)">
+            <span style="font-size:.76rem;font-weight:700;color:var(--ac)">Giá vốn hình thành</span>
+            <div style="text-align:right">${dual2(tc,a.cur)}</div>
+          </div>
+        </div>
+
+        <!-- Thu hồi vốn -->
+        ${rentTotal?`<div class="card mb12">
+          <div style="font-size:.65rem;color:var(--ac);letter-spacing:1.5px;font-weight:700;margin-bottom:10px">📊 THU HỒI VỐN</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span style="font-size:.76rem;color:var(--t3)">Tiến độ</span>
+            <span style="font-weight:700;color:${col}">${pct.toFixed(1)}%</span>
+          </div>
+          <div style="background:var(--s2);border-radius:6px;height:10px;margin-bottom:10px">
+            <div style="background:${col};width:${pct.toFixed(0)}%;height:100%;border-radius:6px"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div style="background:var(--s2);border-radius:8px;padding:10px;text-align:center">
+              <div style="font-size:.65rem;color:var(--t3);margin-bottom:4px">Đã thu về</div>
+              <div style="font-size:.82rem;font-weight:700;color:#4ade80">${fA(rentTotal,a.cur)}</div>
+            </div>
+            <div style="background:var(--s2);border-radius:8px;padding:10px;text-align:center">
+              <div style="font-size:.65rem;color:var(--t3);margin-bottom:4px">Còn lại</div>
+              <div style="font-size:.82rem;font-weight:700;color:${col}">${fA(nbv,a.cur)}</div>
+            </div>
+          </div>
+        </div>`:''}
+
+        <!-- Định giá -->
+        <div class="card mb12">
+          <div style="font-size:.65rem;color:var(--ac);letter-spacing:1.5px;font-weight:700;margin-bottom:10px">💰 ĐỊNH GIÁ THỊ TRƯỜNG</div>
+          ${a.curVal?`
+          <div class="flex aic jb" style="padding:7px 0;border-bottom:1px solid var(--bd)">
+            <span style="font-size:.76rem;color:var(--t3)">Giá thị trường</span>
+            <div style="text-align:right">${dual2(a.curVal,a.cur)}</div>
+          </div>
+          ${a.appraisals?.length?`<div class="flex aic jb" style="padding:7px 0;border-bottom:1px solid var(--bd)"><span style="font-size:.76rem;color:var(--t3)">Ngày định giá</span><span style="font-size:.78rem">${fD(a.appraisals[a.appraisals.length-1].date)}</span></div>`:''}
+          ${a.appraisals?.[a.appraisals.length-1]?.note?`<div class="flex aic jb" style="padding:7px 0;border-bottom:1px solid var(--bd)"><span style="font-size:.76rem;color:var(--t3)">Ghi chú</span><span style="font-size:.76rem">${esc(a.appraisals[a.appraisals.length-1].note)}</span></div>`:''}
+          <div class="flex aic jb" style="padding:7px 0">
+            <span style="font-size:.76rem;color:${a.curVal>tc?'#4ade80':'#f87171'}">${a.curVal>tc?'▲ Tăng giá trị':'▼ Giảm giá trị'}</span>
+            <span style="font-weight:700;color:${a.curVal>tc?'#4ade80':'#f87171'}">${a.curVal>tc?'+':''}${fA(a.curVal-tc,a.cur)}</span>
+          </div>
+          `:`<div style="font-size:.76rem;color:var(--t3);text-align:center;padding:8px 0">Chưa định giá thị trường</div>`}
+          <!-- Form cập nhật định giá -->
+          <button onclick="document.getElementById('m-appr-form').style.display=document.getElementById('m-appr-form').style.display==='none'?'block':'none'"
+            style="width:100%;margin-top:10px;background:rgba(200,169,110,.12);border:1px solid rgba(200,169,110,.3);color:var(--ac);padding:8px;border-radius:var(--rs);font-size:.76rem;cursor:pointer">
+            ✏️ Cập nhật định giá
+          </button>
+          <div id="m-appr-form" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--bd)">
+            <div class="fg mb8"><label style="font-size:.72rem">Giá thị trường (${a.cur})</label>
+              <input type="number" id="m-curval" step="0.01" value="${a.curVal||''}" placeholder="0"
+                style="background:var(--s2);border:1px solid var(--bd);border-radius:var(--rs);padding:8px 10px;color:var(--tx);width:100%;font-size:.85rem">
+            </div>
+            <div class="fg mb8"><label style="font-size:.72rem">Ghi chú / Nguồn</label>
+              <input type="text" id="m-appr-note" placeholder="ShipValue, Batdongsan..." value=""
+                style="background:var(--s2);border:1px solid var(--bd);border-radius:var(--rs);padding:8px 10px;color:var(--tx);width:100%;font-size:.85rem">
+            </div>
+            <button onclick="saveMobileAppraisal('${a.id}','vs')"
+              style="width:100%;background:var(--ac);color:#07090e;border:none;padding:10px;border-radius:var(--rs);font-size:.82rem;font-weight:700;cursor:pointer">
+              💾 Lưu định giá
+            </button>
+          </div>
+        </div>
+
+        ${a.note?`<div class="card mb12"><div style="font-size:.76rem;color:var(--t3)">📝 ${esc(a.note)}</div></div>`:''}
+      </div>
+    </div>
+  `);
+}
+
+// ── TRANG CHI TIẾT NHÀ ĐẤT ───────────────────────────────────────────────────
+function viewMobileRE(id){
+  const a=(db.realestate||[]).find(x=>x.id===id);
+  if(!a)return;
+  const rate=db.exRate||25400;
+  const invTotal=(a.investments||[]).reduce((s,i)=>s+(i.amount||0),0);
+  const tc=a.price+(a.buyCost||0)+invTotal;
+  const rentTotal=(a.rentals||[]).reduce((s,r)=>s+(r.amount||0),0);
+  const pct=tc>0?Math.min(rentTotal/tc*100,100):0;
+  const col=pct>=100?'#4ade80':pct>=60?'#fbbf24':'#f87171';
+  const cv=a.curVal||tc;
+  const dual2=(v,c)=>{
+    const usd=toUSD(v,c);
+    const vnd=Math.round(usd*(c==='VND'?1:rate));
+    return '<span style="font-weight:700">'+fA(v,c)+'</span>'+(c!=='VND'?'<br><span style="font-size:.7rem;color:var(--t3)">≈'+vnd.toLocaleString('vi-VN')+'₫</span>':'');
+  };
+
+  showMobileDetail(`
+    <div style="min-height:100vh;padding-bottom:40px">
+      <div style="position:sticky;top:0;z-index:10;background:var(--s2);border-bottom:1px solid var(--bd);padding:12px 16px;display:flex;align-items:center;gap:12px">
+        <button onclick="closeMobileDetail()" style="background:none;border:none;color:var(--ac);font-size:1.1rem;cursor:pointer;padding:4px">←</button>
+        <div>
+          <div style="font-size:.65rem;color:var(--t3);text-transform:uppercase;letter-spacing:1px">🏠 Nhà đất</div>
+          <div style="font-size:.9rem;font-weight:700;color:var(--tx)">${esc(a.name)}</div>
+        </div>
+      </div>
+      <div style="padding:16px">
+        <div class="card mb12">
+          <div style="font-size:.65rem;color:var(--ac);letter-spacing:1.5px;font-weight:700;margin-bottom:10px">📋 THÔNG TIN</div>
+          ${a.addr?`<div class="flex aic jb" style="padding:7px 0;border-bottom:1px solid var(--bd)"><span style="font-size:.76rem;color:var(--t3)">Địa chỉ</span><span style="font-size:.74rem;text-align:right;max-width:60%">${esc(a.addr)}</span></div>`:''}
+          ${a.year?`<div class="flex aic jb" style="padding:7px 0;border-bottom:1px solid var(--bd)"><span style="font-size:.76rem;color:var(--t3)">Năm mua</span><span style="font-size:.78rem;font-weight:600">${a.year}</span></div>`:''}
+          <div class="flex aic jb" style="padding:7px 0;border-bottom:1px solid var(--bd)">
+            <span style="font-size:.76rem;color:var(--t3)">Giá mua</span><div style="text-align:right">${dual2(a.price,a.cur)}</div>
+          </div>
+          ${a.buyCost?`<div class="flex aic jb" style="padding:7px 0;border-bottom:1px solid var(--bd)"><span style="font-size:.76rem;color:var(--t3)">Chi phí mua</span><div style="text-align:right">${dual2(a.buyCost,a.cur)}</div></div>`:''}
+          ${invTotal?`<div class="flex aic jb" style="padding:7px 0;border-bottom:1px solid var(--bd)"><span style="font-size:.76rem;color:var(--t3)">Đầu tư thêm</span><div style="text-align:right">${dual2(invTotal,a.cur)}</div></div>`:''}
+          <div class="flex aic jb" style="padding:9px 6px;background:rgba(200,169,110,.06);margin:4px -6px -6px;border-radius:0 0 var(--rs) var(--rs)">
+            <span style="font-size:.76rem;font-weight:700;color:var(--ac)">Giá vốn hình thành</span>
+            <div style="text-align:right">${dual2(tc,a.cur)}</div>
+          </div>
+        </div>
+
+        ${rentTotal?`<div class="card mb12">
+          <div style="font-size:.65rem;color:var(--ac);letter-spacing:1.5px;font-weight:700;margin-bottom:10px">📊 THU HỒI VỐN</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <span style="font-size:.76rem;color:var(--t3)">Tiến độ</span>
+            <span style="font-weight:700;color:${col}">${pct.toFixed(1)}%</span>
+          </div>
+          <div style="background:var(--s2);border-radius:6px;height:10px;margin-bottom:10px">
+            <div style="background:${col};width:${pct.toFixed(0)}%;height:100%;border-radius:6px"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div style="background:var(--s2);border-radius:8px;padding:10px;text-align:center">
+              <div style="font-size:.65rem;color:var(--t3);margin-bottom:4px">Đã thu về</div>
+              <div style="font-size:.82rem;font-weight:700;color:#4ade80">${fA(rentTotal,a.cur)}</div>
+            </div>
+            <div style="background:var(--s2);border-radius:8px;padding:10px;text-align:center">
+              <div style="font-size:.65rem;color:var(--t3);margin-bottom:4px">Còn lại</div>
+              <div style="font-size:.82rem;font-weight:700;color:${col}">${fA(Math.max(tc-rentTotal,0),a.cur)}</div>
+            </div>
+          </div>
+        </div>`:''}
+
+        <div class="card mb12">
+          <div style="font-size:.65rem;color:var(--ac);letter-spacing:1.5px;font-weight:700;margin-bottom:10px">💰 ĐỊNH GIÁ THỊ TRƯỜNG</div>
+          ${a.curVal?`
+          <div class="flex aic jb" style="padding:7px 0;border-bottom:1px solid var(--bd)">
+            <span style="font-size:.76rem;color:var(--t3)">Giá thị trường</span>
+            <div style="text-align:right">${dual2(a.curVal,a.cur)}</div>
+          </div>
+          ${a.appraisals?.length?`<div class="flex aic jb" style="padding:7px 0;border-bottom:1px solid var(--bd)"><span style="font-size:.76rem;color:var(--t3)">Ngày định giá</span><span style="font-size:.78rem">${fD(a.appraisals[a.appraisals.length-1].date)}</span></div>`:''}
+          <div class="flex aic jb" style="padding:7px 0">
+            <span style="font-size:.76rem;color:${cv>tc?'#4ade80':'#f87171'}">${cv>tc?'▲ Tăng':'▼ Giảm'}</span>
+            <span style="font-weight:700;color:${cv>tc?'#4ade80':'#f87171'}">${cv>tc?'+':''}${fA(cv-tc,a.cur)}</span>
+          </div>
+          `:`<div style="font-size:.76rem;color:var(--t3);text-align:center;padding:8px 0">Chưa định giá thị trường</div>`}
+          <button onclick="document.getElementById('m-appr-form').style.display=document.getElementById('m-appr-form').style.display==='none'?'block':'none'"
+            style="width:100%;margin-top:10px;background:rgba(200,169,110,.12);border:1px solid rgba(200,169,110,.3);color:var(--ac);padding:8px;border-radius:var(--rs);font-size:.76rem;cursor:pointer">
+            ✏️ Cập nhật định giá
+          </button>
+          <div id="m-appr-form" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--bd)">
+            <div class="fg mb8"><label style="font-size:.72rem">Giá thị trường (${a.cur})</label>
+              <input type="number" id="m-curval" step="1000" value="${a.curVal||''}" placeholder="0"
+                style="background:var(--s2);border:1px solid var(--bd);border-radius:var(--rs);padding:8px 10px;color:var(--tx);width:100%;font-size:.85rem">
+            </div>
+            <div class="fg mb8"><label style="font-size:.72rem">Ghi chú / Nguồn</label>
+              <input type="text" id="m-appr-note" placeholder="Batdongsan, Chính chủ..." value=""
+                style="background:var(--s2);border:1px solid var(--bd);border-radius:var(--rs);padding:8px 10px;color:var(--tx);width:100%;font-size:.85rem">
+            </div>
+            <button onclick="saveMobileAppraisal('${a.id}','re')"
+              style="width:100%;background:var(--ac);color:#07090e;border:none;padding:10px;border-radius:var(--rs);font-size:.82rem;font-weight:700;cursor:pointer">
+              💾 Lưu định giá
+            </button>
+          </div>
+        </div>
+        ${a.note?`<div class="card mb12"><div style="font-size:.76rem;color:var(--t3)">📝 ${esc(a.note)}</div></div>`:''}
+      </div>
+    </div>
+  `);
+}
+
+
+// ── MOBILE ASSET LIST PAGES ───────────────────────────────────────────────────
+function showMobileAssetList(title,ic,items,detailFn){
+  const rate=db.exRate||25400;
+  const rows=items.map(a=>{
+    const capAdd=(a.investments||[]).reduce((s,i)=>s+(i.amount||0),0);
+    const tc=a.price+(a.buyCost||0)+capAdd;
+    const rentTotal=(a.rentals||[]).reduce((s,r)=>s+(r.amount||0),0);
+    const pct=tc>0?Math.min(rentTotal/tc*100,100):0;
+    const col=pct>=100?'#4ade80':pct>=60?'#fbbf24':'#f87171';
+    const cv=a.curVal||tc;
+    return '<div onclick="'+detailFn+'(\''+a.id+'\')" style="padding:14px 16px;border-bottom:1px solid var(--bd);cursor:pointer;display:flex;align-items:center;justify-content:space-between">'
+      +'<div><div style="font-size:.84rem;font-weight:600;margin-bottom:3px">'+esc(a.name)+'</div>'
+      +'<div style="font-size:.68rem;color:var(--t3)">'+(a.year||'')+(a.type?' · '+a.type:'')+'</div>'
+      +(tc?'<div style="background:var(--s2);border-radius:3px;height:3px;width:80px;margin-top:5px"><div style="background:'+col+';width:'+pct.toFixed(0)+'%;height:100%;border-radius:3px"></div></div>':'')
+      +'</div>'
+      +'<div style="text-align:right">'
+      +'<div style="font-size:.8rem;font-weight:700;color:var(--ac)">'+fU(toUSD(cv,a.cur))+'</div>'
+      +'<div style="font-size:.65rem;color:var(--t3)">'+a.cur+'</div>'
+      +'<span style="color:var(--t3);font-size:.9rem"> ›</span>'
+      +'</div></div>';
+  }).join('');
+
+  showMobileDetail(`
+    <div style="min-height:100vh">
+      <div style="position:sticky;top:0;z-index:10;background:var(--s2);border-bottom:1px solid var(--bd);padding:12px 16px;display:flex;align-items:center;gap:12px">
+        <button onclick="closeMobileDetail()" style="background:none;border:none;color:var(--ac);font-size:1.1rem;cursor:pointer;padding:4px">←</button>
+        <div style="font-size:.95rem;font-weight:700">${ic} ${title}</div>
+      </div>
+      <div>${rows||'<div style="padding:40px;text-align:center;color:var(--t3)">Chưa có tài sản nào</div>'}</div>
+    </div>
+  `);
+}
+
+function showMobileREList(){showMobileAssetList('Nhà đất','🏠',(db.realestate||[]).filter(a=>a.status!=='sold'),'viewMobileRE');}
+function showMobileVSList(){showMobileAssetList('Tàu thuyền','⚓',(db.vessels||[]).filter(a=>a.status!=='sold'&&getVesselModule(a.type)==='vessels'),'viewMobileVS');}
+function showMobileMacList(){showMobileAssetList('Máy móc/TB','🔧',(db.vessels||[]).filter(a=>a.status!=='sold'&&getVesselModule(a.type)==='machinery'),'viewMobileVS');}
+function showMobileOthList(){showMobileAssetList('Tài sản khác','📦',(db.vessels||[]).filter(a=>a.status!=='sold'&&getVesselModule(a.type)==='other'),'viewMobileVS');}
+
 P.dashboard=function(){
   try{
   const isMobile=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -700,11 +998,17 @@ P.dashboard=function(){
     const bar=(v,t,col)=>{const w=t>0?Math.min(v/t*100,100).toFixed(0):0;return '<div style="background:var(--s2);border-radius:4px;height:6px;margin-top:4px"><div style="background:'+col+';width:'+w+'%;height:100%;border-radius:4px"></div></div>';};
     const saved=localStorage.getItem('wtp3_last_sync')?new Date(localStorage.getItem('wtp3_last_sync')).toLocaleString('vi-VN'):'—';
 
+    // Build asset sub-lists for detail view
+    const reList=(db.realestate||[]).filter(a=>a.status!=='sold');
+    const vsList=(db.vessels||[]).filter(a=>a.status!=='sold'&&getVesselModule(a.type)==='vessels');
+    const macList=(db.vessels||[]).filter(a=>a.status!=='sold'&&getVesselModule(a.type)==='machinery');
+    const othList=(db.vessels||[]).filter(a=>a.status!=='sold'&&getVesselModule(a.type)==='other');
+
     const assetRows=[
-      {ic:'🏠',lb:'Nhà đất',v:cats.re,col:'#60a5fa'},
-      {ic:'⚓',lb:'Tàu thuyền',v:cats.vs,col:'#2dd4bf'},
-      {ic:'🔧',lb:'Máy móc/TB',v:cats.mac||0,col:'#fb923c'},
-      {ic:'📦',lb:'Tài sản khác',v:cats.oth||0,col:'#a78bfa'},
+      {ic:'🏠',lb:'Nhà đất',v:cats.re,col:'#60a5fa',items:reList,viewFn:'showMobileREList'},
+      {ic:'⚓',lb:'Tàu thuyền',v:cats.vs,col:'#2dd4bf',items:vsList,viewFn:'showMobileVSList'},
+      {ic:'🔧',lb:'Máy móc/TB',v:cats.mac||0,col:'#fb923c',items:macList,viewFn:'showMobileMacList'},
+      {ic:'📦',lb:'Tài sản khác',v:cats.oth||0,col:'#a78bfa',items:othList,viewFn:'showMobileOthList'},
       {ic:'💵',lb:'Tiền mặt/NH',v:cats.cash,col:'#4ade80'},
       {ic:'💰',lb:'Vàng/SJC',v:cats.gold,col:'#fbbf24'},
       {ic:'🤝',lb:'Góp vốn',v:cats.eq,col:'#e879f9'},
@@ -714,14 +1018,16 @@ P.dashboard=function(){
 
     let rows='';
     assetRows.forEach(r=>{
-      rows+='<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)">'
+      const hasDetail=r.viewFn?true:false;
+      rows+='<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd)"'+(hasDetail?' onclick="'+r.viewFn+'()" style="cursor:pointer"':'')+' >'
         +'<div style="display:flex;align-items:center;gap:10px">'
         +'<span style="font-size:1.1rem">'+r.ic+'</span>'
         +'<div><div style="font-size:.8rem;font-weight:600">'+r.lb+'</div>'
         +bar(r.v,ta,r.col)+'</div></div>'
-        +'<div style="text-align:right">'
-        +'<div style="font-size:.82rem;font-weight:700;color:'+r.col+'">'+fU2(r.v)+'</div>'
-        +'<div style="font-size:.68rem;color:var(--t3)">'+pct(r.v,ta)+'</div>'
+        +'<div style="text-align:right;display:flex;align-items:center;gap:8px">'
+        +'<div><div style="font-size:.82rem;font-weight:700;color:'+r.col+'">'+fU2(r.v)+'</div>'
+        +'<div style="font-size:.68rem;color:var(--t3)">'+pct(r.v,ta)+'</div></div>'
+        +(hasDetail?'<span style="color:var(--t3);font-size:.9rem">›</span>':'')
         +'</div></div>';
     });
     if(cats.pay>0)rows+='<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0">'
