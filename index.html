@@ -824,6 +824,31 @@ function viewMobileVS(id){
               <div style="font-size:.82rem;font-weight:700;color:${col}">${fA(nbv,a.cur)}</div>
             </div>
           </div>
+          ${(()=>{
+            const yrs=[...new Set((a.rentals||[]).map(r=>r.date?.slice(0,4)).filter(Boolean))];
+            const avgY=yrs.length?rentTotal/yrs.length:0;
+            if(pct>=100){
+              const s=[...(a.rentals||[])].sort((x,y)=>(x.date||'').localeCompare(y.date||''));
+              let c=0,byr='';
+              for(const r of s){c+=(r.amount||0);if(c>=tc){byr=r.date?r.date.slice(0,4):'';break;}}
+              const surplus=rentTotal-tc;
+              return '<div style="margin-top:10px;padding:10px 12px;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.25);border-radius:var(--rs)">'
+                +'<div style="display:flex;align-items:center;justify-content:space-between">'
+                +'<span style="font-size:.76rem;font-weight:700;color:#4ade80">✅ Đã hòa vốn!</span>'
+                +(byr?'<span style="background:#4ade80;color:#07090e;font-size:.72rem;font-weight:800;padding:3px 12px;border-radius:12px">Năm '+byr+'</span>':'')
+                +'</div>'
+                +'<div style="font-size:.72rem;color:#4ade80;margin-top:4px">Lợi nhuận thêm: +'+fA(surplus,a.cur)+'</div>'
+                +'</div>';
+            }
+            if(!avgY)return '';
+            const yl=Math.ceil(Math.max(nbv,0)/avgY);
+            const by=new Date().getFullYear()+yl;
+            return '<div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:rgba(200,169,110,.08);border-radius:var(--rs)">'
+              +'<span style="font-size:.72rem;color:var(--t3)">⏱ Ước tính hòa vốn</span>'
+              +'<span style="background:rgba(200,169,110,.2);color:var(--ac);font-size:.74rem;font-weight:800;padding:3px 12px;border-radius:12px">~'+yl+' năm · '+by+'</span>'
+              +'</div>'
+              +'<div style="font-size:.68rem;color:var(--t3);text-align:right;margin-top:3px">DT BQ/năm: '+fA(Math.round(avgY),a.cur)+'</div>';
+          })()}
         </div>`:''}
 
         <!-- Định giá -->
