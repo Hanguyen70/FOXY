@@ -170,7 +170,7 @@ textarea{resize:vertical;min-height:56px;}
   }
 </style></head><body style="background:#0a0c14;color:#e2e8f0">
 <div id="APP" class="app">
-  <nav class="sidebar" id="SB">
+  <nav class="sidebar" id="SB" style="display:none">
     <div class="brand"><div class="brand-n">FELIX</div><div class="brand-s">Asset Manager</div></div>
     <div class="ng"><span class="nl">Tổng quan</span>
       <div class="ni on" data-p="dashboard">◈ Dashboard</div>
@@ -203,7 +203,7 @@ textarea{resize:vertical;min-height:56px;}
       </div>
     </div>
   </nav>
-  <div class="main">
+  <div class="main" id="MA">
     <div class="topbar">
       <div class="flex aic g12">
         <span class="tb-title" id="PT">Dashboard</span>
@@ -567,6 +567,7 @@ function getVesselModule(type){
 }
 const PTITLES={dashboard:'Dashboard',reports:'Báo cáo',realestate:'Nhà đất',company:'Công ty',performance:'Hiệu quả khai thác tài sản',vessels:'Tàu thuyền',machinery:'Máy móc / Thiết bị',other:'Khác',cash:'Tiền mặt / NH',gold:'Vàng / SJC',equity:'Góp vốn',receivables:'Phải thu',payables:'Phải trả',settings:'Cài đặt',rates:'Tỷ giá & Giá vàng'};
 function go(page){
+  if(isMobile&&page!=='dashboard'){return;} // mobile: chỉ dashboard
   curP=page;
   document.querySelectorAll('.ni[data-p]').forEach(e=>e.classList.toggle('on',e.dataset.p===page));
   document.getElementById('PT').textContent=PTITLES[page]||page;
@@ -5577,6 +5578,38 @@ function removePin(){
   toast('🔓 Đã tắt PIN','inf');P.settings();
 }
 
+
+// ── AUTO-LOAD CLOUD ON MOBILE OPEN ───────────────────────────────────────────
+async function autoLoadCloudOnMobile(){
+  if(!isMobile)return;
+  try{
+    const url='https://raw.githubusercontent.com/'+GH_REPO+'/'+GH_BRANCH+'/felix-data.json?t='+Date.now();
+    const resp=await fetch(url,{cache:'no-store'});
+    if(!resp.ok)return;
+    const data=await resp.json();
+    if(!data||typeof data!=='object')return;
+    // So sánh thời gian: chỉ load nếu cloud mới hơn local
+    const cloudSaved=data._saved?new Date(data._saved).getTime():0;
+    const localSaved=localStorage.getItem('wtp3_last_cloud_sync')?new Date(localStorage.getItem('wtp3_last_cloud_sync')).getTime():0;
+    if(cloudSaved<=localSaved&&localSaved>0){
+      // Đã có dữ liệu mới nhất
+      return;
+    }
+    // Load dữ liệu mới từ cloud
+    const pin=data.pin;
+    delete data.pin;delete data._saved;
+    localStorage.setItem(DB,JSON.stringify(data));
+    db=data;
+    if(pin){localStorage.setItem('wtp3_pin',pin);}
+    localStorage.setItem('wtp3_last_cloud_sync',new Date().toISOString());
+    go('dashboard');
+    // Hiện toast nhỏ
+    setTimeout(()=>toast('☁ Đã cập nhật dữ liệu mới nhất'),500);
+  }catch(e){
+    console.log('Auto cloud load skipped:',e.message);
+  }
+}
+
 // ── AUTO-LOCK ─────────────────────────────────────────────────────────────────
 const AUTO_LOCK_KEY='felix_auto_lock'; // minutes, 0 = off
 let _autoLockTimer=null;
@@ -5722,6 +5755,11 @@ document.addEventListener('DOMContentLoaded',function(){
     go('dashboard');
     // Auto-lock
     initAutoLock();
+    // Show/hide sidebar based on device
+    if(!isMobile){const sb=document.getElementById('SB');if(sb)sb.style.display='';}
+    else{const ma=document.getElementById('MA');if(ma)ma.style.marginLeft='0';}
+    // Auto-load cloud on mobile
+    setTimeout(autoLoadCloudOnMobile,800);
   }catch(e){
     document.body.innerHTML='<div style="position:fixed;inset:0;background:#0a0c14;display:flex;align-items:center;justify-content:center;color:#fff;font-family:sans-serif;text-align:center;padding:20px"><div><div style="font-size:2rem;margin-bottom:12px">⚠️</div><div style="font-size:1rem;margin-bottom:8px">FELIX gặp lỗi khởi động</div><div style="font-size:.75rem;color:#8e9ab0;margin-bottom:20px">'+e.message+'</div><button onclick="localStorage.clear();location.reload()" style="background:#c8a96e;color:#000;border:none;padding:10px 20px;border-radius:8px;font-size:.85rem;cursor:pointer">Khởi động lại</button></div></div>';
     console.error('Init error:',e);
